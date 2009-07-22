@@ -59,7 +59,7 @@ class ShipControls(object):
         self.update_speed()
 
     def on_key_release(self, symbol, modifiers):
-        self.keys.remove(symbol)
+        self.keys.discard(symbol)
         self.update_speed()
 
 class GameScreen(object):
