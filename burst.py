@@ -21,6 +21,7 @@ class ShipControls(object):
         self.shot_x_sigma = 5
         self.shot_y_sigma = 1
         self.shot_rot_sigma = 1
+        self.shield_time = 0.3
 
     def step(self, dt):
         firing = pyglet.window.key.SPACE in self.keys
@@ -65,6 +66,9 @@ class GameScreen(object):
     def __init__(self, window):
         self.window = window
         self.ship = rabbyt.Sprite('ship.png', scale=0.35)
+        self.shield = rabbyt.Sprite('shield.png', scale=0.3)
+        self.shield.xy = self.ship.attrgetter('xy')
+        self.shield.rot = rabbyt.lerp(end=10, dt=1, extend='extrapolate')
         self.controls = ShipControls(self, self.ship)
         self.shots = []
         self.time = 0.
@@ -82,6 +86,9 @@ class GameScreen(object):
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
         rabbyt.render_unsorted(self.shots)
         rabbyt.render_unsorted([self.ship])
+        if (self.controls.fire_time + self.controls.shield_time
+            < rabbyt.get_time()):
+            rabbyt.render_unsorted([self.shield])
         glPopMatrix()
 
     def close(self):
