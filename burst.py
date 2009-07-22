@@ -7,6 +7,47 @@ import sys
 
 TIME_STEP = 1. / 60.
 
+class Challenge(object):
+    pass
+
+class AsteroidField(Challenge):
+    def __init__(self, screen):
+        self.screen = screen
+        self.asteroids = []
+        for _ in xrange(50):
+            self.create_asteroid()
+
+    def on_draw(self):
+        rabbyt.render_unsorted(self.asteroids)
+
+    def step(self, dt):
+        pass
+
+    def close(self):
+        pass
+
+    def create_asteroid(self):
+        angle = 2 * pi * random.random()
+        distance = 1000
+        x = self.screen.ship.x + distance * cos(angle)
+        y = self.screen.ship.y + distance * sin(angle)
+        scale = random.gauss(0.4, 0.05)
+        asteroid = rabbyt.Sprite('asteroid.png', scale=scale, x=x, y=y)
+        asteroid.x = rabbyt.lerp(end=(asteroid.x + 200 *
+                                 (random.random() - 0.5)),
+                                 dt=1, extend='extrapolate')
+        asteroid.y = rabbyt.lerp(end=(asteroid.y + 200 *
+                                 (random.random() - 0.5)),
+                                 dt=1, extend='extrapolate')
+        asteroid.rot = 360 * random.random()
+        asteroid.rot = rabbyt.lerp(end=(asteroid.rot + 60 *
+                                        (random.random() - 0.5)),
+                                   dt=1, extend='extrapolate')
+        asteroid.red = random.gauss(0.8, 0.2)
+        asteroid.green = random.gauss(0.8, 0.2)
+        asteroid.blue = random.gauss(0.8, 0.2)
+        self.asteroids.append(asteroid)
+
 class ShipControls(object):
     def __init__(self, screen, ship):
         self.screen = screen
@@ -14,9 +55,9 @@ class ShipControls(object):
         self.keys = set()
         self.speed = 400
         self.cooldown = 0.1
-        self.fire_time = 0
+        self.fire_time = -60
         self.shot_speed = 600
-        self.shot_x = -5
+        self.shot_x = 0
         self.shot_y = 30
         self.shot_x_sigma = 5
         self.shot_y_sigma = 1
@@ -49,9 +90,9 @@ class ShipControls(object):
         dx = self.speed * (int(right) - int(left))
         dy = self.speed * (int(up) - int(down))
         self.ship.rot = 10 * (int(left) - int(right))
-        self.ship.x = rabbyt.lerp(end=(self.ship.x + dx), dt=1.0,
+        self.ship.x = rabbyt.lerp(end=(self.ship.x + dx), dt=1,
                                   extend='extrapolate')
-        self.ship.y = rabbyt.lerp(end=(self.ship.y + dy), dt=1.0,
+        self.ship.y = rabbyt.lerp(end=(self.ship.y + dy), dt=1,
                                   extend='extrapolate')
 
     def on_key_press(self, symbol, modifiers):
@@ -71,12 +112,14 @@ class GameScreen(object):
         self.shield.rot = rabbyt.lerp(end=10, dt=1, extend='extrapolate')
         self.controls = ShipControls(self, self.ship)
         self.shots = []
+        self.challenge = AsteroidField(self)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, TIME_STEP)
 
     def step(self, dt):
         self.time += dt
         self.controls.step(dt)
+        self.challenge.step(dt)
         rabbyt.set_time(self.time)
 
     def on_draw(self):
@@ -84,6 +127,7 @@ class GameScreen(object):
         rabbyt.clear()
         glPushMatrix()
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
+        self.challenge.on_draw()
         rabbyt.render_unsorted(self.shots)
         rabbyt.render_unsorted([self.ship])
         if (self.controls.fire_time + self.controls.shield_time
