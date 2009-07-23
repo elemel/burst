@@ -58,7 +58,9 @@ class AsteroidField(Challenge):
         asteroid.blue = random.gauss(0.8, 0.2)
         asteroid_ao = create_ao_sprite(asteroid, 'asteroid-shadow.png')
         asteroid_shadow = create_shadow_sprite(asteroid, 'asteroid-shadow.png')
-        self.screen.sprites.extend([asteroid, asteroid_ao, asteroid_shadow])
+        self.screen.collision_sprites.append(asteroid)
+        self.screen.draw_sprites.extend([asteroid, asteroid_ao,
+                                         asteroid_shadow])
 
 class MySprite(rabbyt.Sprite):
     z = rabbyt.anim_slot()
@@ -95,7 +97,8 @@ class ShipControls(object):
         shot.x = rabbyt.lerp(end=(shot.x + dx), dt=1, extend='extrapolate')
         shot.y = rabbyt.lerp(end=(shot.y + dy), dt=1, extend='extrapolate')
         shot.z = self.ship.z - 0.1
-        self.screen.sprites.append(shot)
+        self.screen.collision_sprites.append(shot)
+        self.screen.draw_sprites.append(shot)
 
     def update_speed(self):
         left = pyglet.window.key.LEFT in self.keys
@@ -121,16 +124,18 @@ class ShipControls(object):
 class GameScreen(object):
     def __init__(self, window):
         self.window = window
-        self.sprites = []
+        self.collision_sprites = []
+        self.draw_sprites = []
         self.ship = MySprite('ship.png', scale=0.35)
         ship_ao = create_ao_sprite(self.ship, 'ship-shadow.png')
         ship_shadow = create_shadow_sprite(self.ship, 'ship-shadow.png')
-        self.sprites.extend([self.ship, ship_ao, ship_shadow])
+        self.collision_sprites.append(self.ship)
+        self.draw_sprites.extend([self.ship, ship_ao, ship_shadow])
         self.shield = MySprite('shield.png', scale=0.3)
         self.shield.xy = self.ship.attrgetter('xy')
         self.shield.rot = rabbyt.lerp(end=10, dt=1, extend='extrapolate')
         self.shield.z = self.ship.attrgetter('z') + 0.1
-        self.sprites.append(self.shield)
+        self.draw_sprites.append(self.shield)
         self.controls = ShipControls(self, self.ship)
         self.challenge = AsteroidField(self)
         self.time = 0.
@@ -141,6 +146,7 @@ class GameScreen(object):
         self.controls.step(dt)
         self.challenge.step(dt)
         rabbyt.set_time(self.time)
+        
 
     def on_draw(self):
         rabbyt.set_default_attribs()
@@ -152,8 +158,8 @@ class GameScreen(object):
             self.shield.alpha = 1
         else:
             self.shield.alpha = 0
-        self.sprites.sort(key=attrgetter('z'))
-        rabbyt.render_unsorted(self.sprites)
+        self.draw_sprites.sort(key=attrgetter('z'))
+        rabbyt.render_unsorted(self.draw_sprites)
         glPopMatrix()
 
     def close(self):
