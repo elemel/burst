@@ -1,4 +1,5 @@
 from math import *
+from operator import attrgetter
 import pyglet
 from pyglet.gl import *
 import rabbyt
@@ -7,18 +8,25 @@ import sys
 
 TIME_STEP = 1. / 60.
 
+def create_shadow_sprite(sprite, shadow_image, x_offset=20, y_offset=-20):
+    return MySprite(shadow_image, scale=sprite.scale, alpha=0.8,
+                    rot=(sprite.attrgetter('rot')),
+                    x=(sprite.attrgetter('x') + x_offset),
+                    y=(sprite.attrgetter('y') + y_offset),
+                    z=(sprite.attrgetter('z') - 0.1))
+
+def create_ao_sprite(sprite, ao_image):
+    return create_shadow_sprite(sprite, ao_image, x_offset=0, y_offset=0)
+
 class Challenge(object):
     pass
 
 class AsteroidField(Challenge):
     def __init__(self, screen):
         self.screen = screen
-        self.asteroids = []
-        for _ in xrange(50):
+        self.asteroid_count = 0
+        for _ in xrange(100):
             self.create_asteroid()
-
-    def on_draw(self):
-        rabbyt.render_unsorted(self.asteroids)
 
     def step(self, dt):
         pass
@@ -27,18 +35,20 @@ class AsteroidField(Challenge):
         pass
 
     def create_asteroid(self):
+        self.asteroid_count += 1
         angle = 2 * pi * random.random()
         distance = 1000
         x = self.screen.ship.x + distance * cos(angle)
         y = self.screen.ship.y + distance * sin(angle)
-        scale = random.gauss(0.4, 0.05)
-        asteroid = rabbyt.Sprite('asteroid.png', scale=scale, x=x, y=y)
+        scale = random.gauss(0.5, 0.1)
+        asteroid = MySprite('asteroid.png', scale=scale, x=x, y=y)
         asteroid.x = rabbyt.lerp(end=(asteroid.x + 200 *
                                  (random.random() - 0.5)),
                                  dt=1, extend='extrapolate')
         asteroid.y = rabbyt.lerp(end=(asteroid.y + 200 *
                                  (random.random() - 0.5)),
                                  dt=1, extend='extrapolate')
+        asteroid.z = -self.asteroid_count
         asteroid.rot = 360 * random.random()
         asteroid.rot = rabbyt.lerp(end=(asteroid.rot + 60 *
                                         (random.random() - 0.5)),
@@ -46,7 +56,12 @@ class AsteroidField(Challenge):
         asteroid.red = random.gauss(0.8, 0.2)
         asteroid.green = random.gauss(0.8, 0.2)
         asteroid.blue = random.gauss(0.8, 0.2)
-        self.asteroids.append(asteroid)
+        asteroid_ao = create_ao_sprite(asteroid, 'asteroid-shadow.png')
+        asteroid_shadow = create_shadow_sprite(asteroid, 'asteroid-shadow.png')
+        self.screen.sprites.extend([asteroid, asteroid_ao, asteroid_shadow])
+
+class MySprite(rabbyt.Sprite):
+    z = rabbyt.anim_slot()
 
 class ShipControls(object):
     def __init__(self, screen, ship):
@@ -71,15 +86,16 @@ class ShipControls(object):
 
     def fire(self):
         self.fire_time = rabbyt.get_time()
-        shot = rabbyt.Sprite('laser.png', scale=0.35)
+        shot = MySprite('laser.png', scale=0.35)
         shot.x = random.gauss(self.ship.x + self.shot_x, self.shot_x_sigma)
         shot.y = random.gauss(self.ship.y + self.shot_y, self.shot_y_sigma)
         shot.rot = random.gauss(self.ship.rot, self.shot_rot_sigma)
         dy = self.shot_speed * cos(shot.rot * pi / 180)
         dx = self.shot_speed * -sin(shot.rot * pi / 180)
-        shot.x = rabbyt.lerp(end=(shot.x + dx), dt=1.0, extend='extrapolate')
-        shot.y = rabbyt.lerp(end=(shot.y + dy), dt=1.0, extend='extrapolate')
-        self.screen.shots.append(shot)
+        shot.x = rabbyt.lerp(end=(shot.x + dx), dt=1, extend='extrapolate')
+        shot.y = rabbyt.lerp(end=(shot.y + dy), dt=1, extend='extrapolate')
+        shot.z = self.ship.z - 0.1
+        self.screen.sprites.append(shot)
 
     def update_speed(self):
         left = pyglet.window.key.LEFT in self.keys
@@ -89,7 +105,6 @@ class ShipControls(object):
 
         dx = self.speed * (int(right) - int(left))
         dy = self.speed * (int(up) - int(down))
-        self.ship.rot = 10 * (int(left) - int(right))
         self.ship.x = rabbyt.lerp(end=(self.ship.x + dx), dt=1,
                                   extend='extrapolate')
         self.ship.y = rabbyt.lerp(end=(self.ship.y + dy), dt=1,
@@ -101,17 +116,22 @@ class ShipControls(object):
 
     def on_key_release(self, symbol, modifiers):
         self.keys.discard(symbol)
-        self.update_speed()
+        self.update_speed() 
 
 class GameScreen(object):
     def __init__(self, window):
         self.window = window
-        self.ship = rabbyt.Sprite('ship.png', scale=0.35)
-        self.shield = rabbyt.Sprite('shield.png', scale=0.3)
+        self.sprites = []
+        self.ship = MySprite('ship.png', scale=0.35)
+        ship_ao = create_ao_sprite(self.ship, 'ship-shadow.png')
+        ship_shadow = create_shadow_sprite(self.ship, 'ship-shadow.png')
+        self.sprites.extend([self.ship, ship_ao, ship_shadow])
+        self.shield = MySprite('shield.png', scale=0.3)
         self.shield.xy = self.ship.attrgetter('xy')
         self.shield.rot = rabbyt.lerp(end=10, dt=1, extend='extrapolate')
+        self.shield.z = self.ship.attrgetter('z') + 0.1
+        self.sprites.append(self.shield)
         self.controls = ShipControls(self, self.ship)
-        self.shots = []
         self.challenge = AsteroidField(self)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, TIME_STEP)
@@ -127,12 +147,13 @@ class GameScreen(object):
         rabbyt.clear()
         glPushMatrix()
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
-        self.challenge.on_draw()
-        rabbyt.render_unsorted(self.shots)
-        rabbyt.render_unsorted([self.ship])
         if (self.controls.fire_time + self.controls.shield_time
             < rabbyt.get_time()):
-            rabbyt.render_unsorted([self.shield])
+            self.shield.alpha = 1
+        else:
+            self.shield.alpha = 0
+        self.sprites.sort(key=attrgetter('z'))
+        rabbyt.render_unsorted(self.sprites)
         glPopMatrix()
 
     def close(self):
