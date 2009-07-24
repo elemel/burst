@@ -58,9 +58,9 @@ class AsteroidField(Challenge):
         asteroid.rot = rabbyt.lerp(end=(asteroid.rot + 60 *
                                         (random.random() - 0.5)),
                                    dt=1, extend='extrapolate')
-        asteroid.red = random.gauss(0.9, 0.1)
-        asteroid.green = random.gauss(0.9, 0.1)
-        asteroid.blue = random.gauss(0.9, 0.1)
+        asteroid.red = random.gauss(0.8, 0.2)
+        asteroid.green = random.gauss(0.8, 0.2)
+        asteroid.blue = random.gauss(0.8, 0.2)
         asteroid_ao = create_ao(asteroid, 'asteroid-shadow.png')
         asteroid_shadow = create_shadow(asteroid, 'asteroid-shadow.png')
         self.screen.collision_sprites.append(asteroid)
