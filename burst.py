@@ -8,20 +8,25 @@ import sys
 
 TIME_STEP = 1. / 60.
 
-def create_shadow_sprite(sprite, shadow_image, x_offset=20, y_offset=-20):
-    return MySprite(shadow_image, scale=sprite.scale, alpha=0.8,
+def create_shadow(sprite, texture, x=20, y=-20):
+    """Create a shadow sprite."""
+    return MySprite(texture, scale=sprite.scale, alpha=0.8,
                     rot=(sprite.attrgetter('rot')),
-                    x=(sprite.attrgetter('x') + x_offset),
-                    y=(sprite.attrgetter('y') + y_offset),
+                    x=(sprite.attrgetter('x') + x),
+                    y=(sprite.attrgetter('y') + y),
                     z=(sprite.attrgetter('z') - 0.1))
 
-def create_ao_sprite(sprite, ao_image):
-    return create_shadow_sprite(sprite, ao_image, x_offset=0, y_offset=0)
+def create_ao(sprite, texture):
+    """Create an ambient occlusion (AO) sprite."""
+    return create_shadow(sprite, texture, x=0, y=0)
 
 class Challenge(object):
+    """A challenge that the player encounters and must endure or overcome."""
     pass
 
 class AsteroidField(Challenge):
+    """The player must navigate through an asteroid field."""
+
     def __init__(self, screen):
         self.screen = screen
         self.asteroid_count = 0
@@ -53,17 +58,24 @@ class AsteroidField(Challenge):
         asteroid.rot = rabbyt.lerp(end=(asteroid.rot + 60 *
                                         (random.random() - 0.5)),
                                    dt=1, extend='extrapolate')
-        asteroid.red = random.gauss(0.8, 0.2)
-        asteroid.green = random.gauss(0.8, 0.2)
-        asteroid.blue = random.gauss(0.8, 0.2)
-        asteroid_ao = create_ao_sprite(asteroid, 'asteroid-shadow.png')
-        asteroid_shadow = create_shadow_sprite(asteroid, 'asteroid-shadow.png')
+        asteroid.red = random.gauss(0.9, 0.1)
+        asteroid.green = random.gauss(0.9, 0.1)
+        asteroid.blue = random.gauss(0.9, 0.1)
+        asteroid_ao = create_ao(asteroid, 'asteroid-shadow.png')
+        asteroid_shadow = create_shadow(asteroid, 'asteroid-shadow.png')
         self.screen.collision_sprites.append(asteroid)
         self.screen.draw_sprites.extend([asteroid, asteroid_ao,
                                          asteroid_shadow])
 
 class MySprite(rabbyt.Sprite):
     z = rabbyt.anim_slot()
+
+    def __init__(self, *args, **kwargs):
+        super(MySprite, self).__init__(*args, **kwargs)
+        if not 'bounding_radius' in kwargs:
+            # KLUDGE: Scale bounding radius since Rabbyt doesn't. Will break if
+            # Rabbyt starts scaling the bounding radius.
+            self.bounding_radius *= self.scale
 
 class ShipControls(object):
     def __init__(self, screen, ship):
@@ -127,8 +139,8 @@ class GameScreen(object):
         self.collision_sprites = []
         self.draw_sprites = []
         self.ship = MySprite('ship.png', scale=0.35)
-        ship_ao = create_ao_sprite(self.ship, 'ship-shadow.png')
-        ship_shadow = create_shadow_sprite(self.ship, 'ship-shadow.png')
+        ship_ao = create_ao(self.ship, 'ship-shadow.png')
+        ship_shadow = create_shadow(self.ship, 'ship-shadow.png')
         self.collision_sprites.append(self.ship)
         self.draw_sprites.extend([self.ship, ship_ao, ship_shadow])
         self.shield = MySprite('shield.png', scale=0.3)
@@ -146,7 +158,7 @@ class GameScreen(object):
         self.controls.step(dt)
         self.challenge.step(dt)
         rabbyt.set_time(self.time)
-        
+        collisions = rabbyt.collisions.collide(self.collision_sprites)
 
     def on_draw(self):
         rabbyt.set_default_attribs()
