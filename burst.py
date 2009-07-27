@@ -8,8 +8,6 @@ from operator import attrgetter
 import random
 import sys
 
-TIME_STEP = 1. / 60.
-
 def create_circle_vertex_list(center=(0., 0.), radius=1., vertex_count=100):
     x, y = center
     coords = []
@@ -118,6 +116,7 @@ def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
     shape_def.radius = radius
     shape_def.density = density
     body.CreateShape(shape_def)
+    body.SetMassFromShapes()
     return body
 
 class Camera(object):
@@ -125,7 +124,12 @@ class Camera(object):
         self.position = 0., 0.
 
 class Level(object):
+    dt = 1. / 60.
+
     def __init__(self):
+        self.time = 0.
+        self.actors = []
+        self.sprites = []
         self._init_world()
         self._init_circle_vertex_list()
 
@@ -136,21 +140,72 @@ class Level(object):
     def _init_circle_vertex_list(self):
         self.circle_vertex_list = create_circle_vertex_list()
 
+    def step(self):
+        self.time += self.dt
+        for actor in self.actors:
+            actor.step()
+        self.world.Step(self.dt, 10, 10)
+        rabbyt.set_time(self.time)
+
+    def draw(self, width, height):
+        glPushMatrix()
+        glTranslatef(width // 2, height // 2, 0)
+        self.sprites.sort(key=attrgetter('z'))
+        rabbyt.render_unsorted(self.sprites)
+        glPopMatrix()
+
+    def debug_draw(self, width, height):
+        glPushMatrix()
+        glTranslatef(width // 2, height // 2, 0)
+        glScalef(10., 10., 10.)
+        glColor3f(0., 1., 0.)
+        glDisable(GL_TEXTURE_2D)
+        debug_draw(self.world)
+        glPopMatrix()
+
 class Actor(object):
     pass
 
 class Ship(Actor):
-    def __init__(self, level, **kwargs):
+    def __init__(self, level):
         self.level = level
-        self._init_body(**kwargs)
-        self._init_sprite(**kwargs)
+        self.keys = set()
+        self.thrust = b2Vec2(0., 0.)
+        self._init_body()
+        self._init_sprite()
+        self.level.actors.append(self)
 
-    def _init_body(self, **kwargs):
+    def delete(self):
+        self.level.actors.remove(self)
+        self.level.sprites.remove(self.sprite)
+        self.level.world.DestroyBody(self.body)
+
+    def _init_body(self):
         self.body = create_circle_body(self.level.world)
         self.body.userData = self
 
     def _init_sprite(self):
-        pass
+        self.sprite = MySprite('ship.png', scale=0.35)
+        self.level.sprites.append(self.sprite)
+
+    def on_key_press(self, symbol, modifiers):
+        self.keys.add(symbol)
+
+    def on_key_release(self, symbol, modifiers):
+        self.keys.discard(symbol)
+
+    def step(self):
+        left = float(pyglet.window.key.LEFT in self.keys)
+        right = float(pyglet.window.key.RIGHT in self.keys)
+        up = float(pyglet.window.key.UP in self.keys)
+        down = float(pyglet.window.key.DOWN in self.keys)
+
+        self.thrust = b2Vec2(right - left, up - down)
+        self.thrust.Normalize()
+        force = self.thrust * 1000. - self.body.GetLinearVelocity() * 20.
+        self.body.ApplyForce(force, self.body.GetWorldCenter())
+
+        self.sprite.xy = (self.body.position * 10.).tuple()
 
 class Asteroid(Actor):
     def __init__(self, level):
@@ -161,121 +216,32 @@ class Asteroid(Actor):
         self.body = create_circle_body(self.level.world)
         self.body.userData = self
 
-class ShipControls(object):
-    def __init__(self, screen, ship):
-        self.screen = screen
-        self.ship = ship
-        self.keys = set()
-        self.speed = 400
-        self.cooldown = 0.1
-        self.fire_time = -60
-        self.shot_speed = 600
-        self.shot_x = 0
-        self.shot_y = 30
-        self.shot_x_sigma = 5
-        self.shot_y_sigma = 1
-        self.shot_rot_sigma = 1
-        self.shield_time = 0.3
-
-    def step(self, dt):
-        firing = pyglet.window.key.SPACE in self.keys
-        if firing and rabbyt.get_time() > self.fire_time + self.cooldown:
-            self.fire()
-
-    def fire(self):
-        self.fire_time = rabbyt.get_time()
-        shot = MySprite('laser.png', scale=0.35)
-        shot.x = random.gauss(self.ship.x + self.shot_x, self.shot_x_sigma)
-        shot.y = random.gauss(self.ship.y + self.shot_y, self.shot_y_sigma)
-        shot.rot = random.gauss(self.ship.rot, self.shot_rot_sigma)
-        dy = self.shot_speed * cos(shot.rot * pi / 180)
-        dx = self.shot_speed * -sin(shot.rot * pi / 180)
-        shot.x = rabbyt.lerp(end=(shot.x + dx), dt=1, extend='extrapolate')
-        shot.y = rabbyt.lerp(end=(shot.y + dy), dt=1, extend='extrapolate')
-        shot.z = self.ship.z - 0.1
-        self.screen.collision_sprites.append(shot)
-        self.screen.draw_sprites.append(shot)
-
-    def update_speed(self):
-        left = pyglet.window.key.LEFT in self.keys
-        right = pyglet.window.key.RIGHT in self.keys
-        up = pyglet.window.key.UP in self.keys
-        down = pyglet.window.key.DOWN in self.keys
-
-        dx = self.speed * (int(right) - int(left))
-        dy = self.speed * (int(up) - int(down))
-        self.ship.x = rabbyt.lerp(end=(self.ship.x + dx), dt=1,
-                                  extend='extrapolate')
-        self.ship.y = rabbyt.lerp(end=(self.ship.y + dy), dt=1,
-                                  extend='extrapolate')
-
-    def on_key_press(self, symbol, modifiers):
-        self.keys.add(symbol)
-        self.update_speed()
-
-    def on_key_release(self, symbol, modifiers):
-        self.keys.discard(symbol)
-        self.update_speed() 
-
 class GameScreen(object):
     def __init__(self, window):
         self.window = window
         self.level = Level()
-        Ship(self.level)
-        self.collision_sprites = []
-        self.draw_sprites = []
-        self.ship = MySprite('ship.png', scale=0.35)
-        ship_ao = create_ao(self.ship, 'ship-shadow.png')
-        ship_shadow = create_shadow(self.ship, 'ship-shadow.png')
-        self.collision_sprites.append(self.ship)
-        self.draw_sprites.extend([self.ship, ship_ao, ship_shadow])
-        self.shield = MySprite('shield.png', scale=0.3)
-        self.shield.xy = self.ship.attrgetter('xy')
-        self.shield.rot = rabbyt.lerp(end=10, dt=1, extend='extrapolate')
-        self.shield.z = self.ship.attrgetter('z') + 0.1
-        self.draw_sprites.append(self.shield)
-        self.controls = ShipControls(self, self.ship)
-        self.challenge = AsteroidField(self)
+        self.ship = Ship(self.level)
         self.time = 0.
-        pyglet.clock.schedule_interval(self.step, TIME_STEP)
+        pyglet.clock.schedule_interval(self.step, self.level.dt)
 
     def step(self, dt):
         self.time += dt
-        self.controls.step(dt)
-        self.challenge.step(dt)
-        rabbyt.set_time(self.time)
-        collisions = rabbyt.collisions.collide(self.collision_sprites)
+        while self.level.time + self.level.dt < self.time:
+            self.level.step()
 
     def on_draw(self):
-        rabbyt.clear()
-
-        glPushMatrix()
-        glTranslatef(self.window.width // 2, self.window.height // 2, 0)
-        if (self.controls.fire_time + self.controls.shield_time
-            < rabbyt.get_time()):
-            self.shield.alpha = 1
-        else:
-            self.shield.alpha = 0
-        self.draw_sprites.sort(key=attrgetter('z'))
-        rabbyt.render_unsorted(self.draw_sprites)
-        glPopMatrix()
-
-        glPushMatrix()
-        glTranslatef(self.window.width // 2, self.window.height // 2, 0)
-        glScalef(10., 10., 10.)
-        glColor3f(0., 1., 0.)
-        glDisable(GL_TEXTURE_2D)
-        debug_draw(self.level.world)
-        glPopMatrix()
+        self.window.clear()
+        self.level.draw(self.window.width, self.window.height)
+        self.level.debug_draw(self.window.width, self.window.height)
 
     def close(self):
         pyglet.clock.unschedule(self.step)
 
     def on_key_press(self, symbol, modifiers):
-        self.controls.on_key_press(symbol, modifiers)
+        self.ship.on_key_press(symbol, modifiers)
 
     def on_key_release(self, symbol, modifiers):
-        self.controls.on_key_release(symbol, modifiers)
+        self.ship.on_key_release(symbol, modifiers)
             
 class MyWindow(pyglet.window.Window):
     def __init__(self, **kwargs):
