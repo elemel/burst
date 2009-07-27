@@ -1,12 +1,46 @@
-from math import *
-from operator import attrgetter
+from Box2D import *
 import pyglet
 from pyglet.gl import *
 import rabbyt
+
+from math import *
+from operator import attrgetter
 import random
 import sys
 
 TIME_STEP = 1. / 60.
+
+def create_circle_vertex_list(center=(0., 0.), radius=1., vertex_count=100):
+    x, y = center
+    coords = []
+    for i in xrange(vertex_count):
+        angle = 2. * pi * float(i) / float(vertex_count)
+        coords.append(x + radius * cos(angle))
+        coords.append(y + radius * sin(angle))
+        if i:
+            coords.extend(coords[-2:])
+    coords.extend(coords[:2])
+    return pyglet.graphics.vertex_list(len(coords) // 2, ('v2f', coords))
+
+def debug_draw(world):
+    circle_vertex_list = create_circle_vertex_list()
+    for body in world.bodyList:
+        glPushMatrix()
+        x, y = body.position.tuple()
+        glTranslatef(x, y, 0.)
+        glRotatef(rad_to_deg(body.angle), 0., 0., 1.)
+        for shape in body.shapeList:
+            if isinstance(shape, b2CircleShape):
+                glPushMatrix()
+                x, y = shape.localPosition.tuple()
+                glTranslatef(x, y, 0.)
+                glScalef(shape.radius, shape.radius, shape.radius)
+                circle_vertex_list.draw(GL_LINES)
+                glPopMatrix()
+        glPopMatrix()
+
+def rad_to_deg(angle):
+    return angle * 180. / pi
 
 def create_shadow(sprite, texture, x=20, y=-20):
     """Create a shadow sprite."""
@@ -70,12 +104,62 @@ class AsteroidField(Challenge):
 class MySprite(rabbyt.Sprite):
     z = rabbyt.anim_slot()
 
-    def __init__(self, *args, **kwargs):
-        super(MySprite, self).__init__(*args, **kwargs)
-        if not 'bounding_radius' in kwargs:
-            # KLUDGE: Scale bounding radius since Rabbyt doesn't. Will break if
-            # Rabbyt starts scaling the bounding radius.
-            self.bounding_radius *= self.scale
+def create_aabb(lower_bound, upper_bound):
+    aabb = b2AABB()
+    aabb.lowerBound = lower_bound
+    aabb.upperBound = upper_bound
+    return aabb
+
+def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
+    body_def = b2BodyDef()
+    body_def.position = position
+    body = world.CreateBody(body_def)
+    shape_def = b2CircleDef()
+    shape_def.radius = radius
+    shape_def.density = density
+    body.CreateShape(shape_def)
+    return body
+
+class Camera(object):
+    def __init__(self):
+        self.position = 0., 0.
+
+class Level(object):
+    def __init__(self):
+        self._init_world()
+        self._init_circle_vertex_list()
+
+    def _init_world(self):
+        aabb = create_aabb((-100., -100.), (100., 100.))
+        self.world = b2World(aabb, (0., 0.), True)
+
+    def _init_circle_vertex_list(self):
+        self.circle_vertex_list = create_circle_vertex_list()
+
+class Actor(object):
+    pass
+
+class Ship(Actor):
+    def __init__(self, level, **kwargs):
+        self.level = level
+        self._init_body(**kwargs)
+        self._init_sprite(**kwargs)
+
+    def _init_body(self, **kwargs):
+        self.body = create_circle_body(self.level.world)
+        self.body.userData = self
+
+    def _init_sprite(self):
+        pass
+
+class Asteroid(Actor):
+    def __init__(self, level):
+        self.level = level
+        self._init_body()
+
+    def _init_body(self):
+        self.body = create_circle_body(self.level.world)
+        self.body.userData = self
 
 class ShipControls(object):
     def __init__(self, screen, ship):
@@ -136,6 +220,8 @@ class ShipControls(object):
 class GameScreen(object):
     def __init__(self, window):
         self.window = window
+        self.level = Level()
+        Ship(self.level)
         self.collision_sprites = []
         self.draw_sprites = []
         self.ship = MySprite('ship.png', scale=0.35)
@@ -161,8 +247,8 @@ class GameScreen(object):
         collisions = rabbyt.collisions.collide(self.collision_sprites)
 
     def on_draw(self):
-        rabbyt.set_default_attribs()
         rabbyt.clear()
+
         glPushMatrix()
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
         if (self.controls.fire_time + self.controls.shield_time
@@ -172,6 +258,14 @@ class GameScreen(object):
             self.shield.alpha = 0
         self.draw_sprites.sort(key=attrgetter('z'))
         rabbyt.render_unsorted(self.draw_sprites)
+        glPopMatrix()
+
+        glPushMatrix()
+        glTranslatef(self.window.width // 2, self.window.height // 2, 0)
+        glScalef(10., 10., 10.)
+        glColor3f(0., 1., 0.)
+        glDisable(GL_TEXTURE_2D)
+        debug_draw(self.level.world)
         glPopMatrix()
 
     def close(self):
@@ -189,6 +283,7 @@ class MyWindow(pyglet.window.Window):
         if self.fullscreen:
             self.set_exclusive_mouse(True)
             self.set_exclusive_keyboard(True)
+        rabbyt.set_default_attribs()
         self.my_screen = GameScreen(self)
 
     def on_draw(self):
