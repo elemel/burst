@@ -266,8 +266,9 @@ class Asteroid(Controller):
         self.body.userData = self
 
 class GameScreen(object):
-    def __init__(self, window):
+    def __init__(self, window, debug):
         self.window = window
+        self.debug = debug
         self.level = Level()
         self.ship = Ship(self.level)
         self.time = 0.
@@ -281,7 +282,8 @@ class GameScreen(object):
     def on_draw(self):
         self.window.clear()
         self.level.draw(self.window.width, self.window.height)
-        self.level.debug_draw(self.window.width, self.window.height)
+        if self.debug:
+            self.level.debug_draw(self.window.width, self.window.height)
 
     def close(self):
         pyglet.clock.unschedule(self.step)
@@ -293,30 +295,52 @@ class GameScreen(object):
         self.ship.on_key_release(symbol, modifiers)
             
 class MyWindow(pyglet.window.Window):
-    def __init__(self, fps=False, **kwargs):
+    def __init__(self, fps=False, debug=False, **kwargs):
         super(MyWindow, self).__init__(**kwargs)
+
+        # Grab mouse and keyboard if we're in fullscreen mode.
         self.set_exclusive_mouse(self.fullscreen)
         self.set_exclusive_keyboard(self.fullscreen)
+
+        # Initialize Rabbyt.
         rabbyt.set_default_attribs()
+
+        # Clear to opaque black for opaque screenshots.
+        glClearColor(0., 0., 0., 1.)
+
+        # Create FPS display.
         self.fps_display = pyglet.clock.ClockDisplay() if fps else None
-        self.my_screen = GameScreen(self)
+
+        # Most window calls are delegated to a screen.
+        self.my_screen = GameScreen(self, debug)
 
     def on_draw(self):
+        # Delegate to screen.
         self.my_screen.on_draw()
+
+        # Display FPS counter.
         if self.fps_display is not None:
             self.fps_display.draw()
 
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
+            # Close window.
             self.on_close()
         elif symbol == pyglet.window.key.F11:
+            # Toggle fullscreen mode.
             self.set_fullscreen(not self.fullscreen)
             self.set_exclusive_mouse(self.fullscreen)
             self.set_exclusive_keyboard(self.fullscreen)
+        elif symbol == pyglet.window.key.F12:
+            # Save screenshot.
+            color_buffer = pyglet.image.get_buffer_manager().get_color_buffer()
+            color_buffer.save('burst-screenshot.png')
         else:
+            # Delegate to screen.
             self.my_screen.on_key_press(symbol, modifiers)
 
     def on_key_release(self, symbol, modifiers):
+        # Delegate to screen.
         self.my_screen.on_key_release(symbol, modifiers)
 
 def help():
@@ -324,6 +348,7 @@ def help():
 Usage: burst [OPTION]...
 
 Options:
+  --debug       Draw debug graphics.
   --fps         Display FPS counter.
   --fullscreen  Run in fullscreen mode.
   -h, --help    Print this helpful text and exit.
@@ -340,9 +365,10 @@ def main():
         return help()
     if '--test' in args:
         return test()
+    debug = '--debug' in args
     fps = '--fps' in args
     fullscreen = '--fullscreen' in args
-    window = MyWindow(fps=fps, fullscreen=fullscreen)
+    window = MyWindow(debug=debug, fps=fps, fullscreen=fullscreen)
     pyglet.app.run()
 
 if __name__ == '__main__':

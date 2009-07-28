@@ -1,0 +1,4 @@
+*.pickle
+*.pyc
+*.pyo
+burst-screenshot.png
