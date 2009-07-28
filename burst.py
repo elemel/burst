@@ -61,10 +61,11 @@ def create_aabb(lower_bound, upper_bound):
     aabb.upperBound = upper_bound
     return aabb
 
-def create_circle_body(world, position=(0., 0.), radius=1., density=1.,
-                       group_index=0):
+def create_circle_body(world, position=(0., 0.), angle=0., radius=1.,
+                       density=1., group_index=0):
     body_def = b2BodyDef()
     body_def.position = position
+    body_def.angle = angle
     body = world.CreateBody(body_def)
     shape_def = b2CircleDef()
     shape_def.radius = radius
@@ -147,15 +148,16 @@ class Thing(object):
     texture = None
     scale = 1.
 
-    def __init__(self, level, position=(0., 0.)):
+    def __init__(self, level, position=(0., 0.), angle=0.):
         self.level = level
-        self._init_body(position=position)
+        self._init_body(position=position, angle=angle)
         self._init_sprite()
         self.level.things.append(self)
 
-    def _init_body(self, position):
+    def _init_body(self, position=(0., 0.), angle=0.):
         self.body = create_circle_body(self.level.world,
                                        position=position,
+                                       angle=angle,
                                        radius=self.radius,
                                        density=self.density,
                                        group_index=self.group_index)
@@ -177,6 +179,7 @@ class Thing(object):
     # instead?
     def draw(self):
         self.sprite.xy = self.body.position.tuple()
+        self.sprite.rot = rad_to_deg(self.body.angle)
 
 class Challenge(object):
     """A challenge that the player encounters and must endure or overcome."""
@@ -270,12 +273,19 @@ class Ship(Thing):
     texture = 'ship.png'
     scale = 0.015
 
-    def __init__(self, level):
-        super(Ship, self).__init__(level)
+    def __init__(self, level, **kwargs):
+        super(Ship, self).__init__(level, **kwargs)
         self.thrust = b2Vec2(0., 0.)
         self.cannons = [LaserCannon(self.level, self, self.cannon_slots[0]),
                         None, None]
 
+    # TODO: While scrolling, damping should be probably be applied to the
+    # linear velocity error, i.e. linear velocity of scrolling minus linear
+    # velocity of body.
+    #
+    # TODO: Regulate angle and apply angular damping. While locking, turn ship
+    # toward target or target's predicted position. While scrolling (and not
+    # locking), turn ship in the scroll direction.
     def step(self):
         force = (self.thrust * self.thrust_force -
                  self.body.GetLinearVelocity() * self.damping)
@@ -318,7 +328,7 @@ class GameScreen(object):
     def __init__(self, window, debug):
         self.window = window
         self.level = Level(debug)
-        self.ship = Ship(self.level)
+        self.ship = Ship(self.level, angle=(pi / 4.))
         self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
