@@ -212,7 +212,7 @@ class Missile(Shot):
     pass
 
 class Ship(Controller):
-    thrust_force = 1000.
+    thrust_force = 700.
     damping = 20.
 
     def __init__(self, level):
