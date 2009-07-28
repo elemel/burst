@@ -52,7 +52,83 @@ def create_ao(sprite, texture):
     """Create an ambient occlusion (AO) sprite."""
     return create_shadow(sprite, texture, x=0, y=0)
 
-class Challenge(object):
+class MySprite(rabbyt.Sprite):
+    z = rabbyt.anim_slot()
+
+def create_aabb(lower_bound, upper_bound):
+    aabb = b2AABB()
+    aabb.lowerBound = lower_bound
+    aabb.upperBound = upper_bound
+    return aabb
+
+def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
+    body_def = b2BodyDef()
+    body_def.position = position
+    body = world.CreateBody(body_def)
+    shape_def = b2CircleDef()
+    shape_def.radius = radius
+    shape_def.density = density
+    body.CreateShape(shape_def)
+    body.SetMassFromShapes()
+    return body
+
+class Camera(object):
+    def __init__(self):
+        self.position = 0., 0.
+
+class Level(object):
+    dt = 1. / 60.
+
+    def __init__(self):
+        self.time = 0.
+        
+        # The controllers to call every step.
+        self.controllers = []
+
+        # The sprites to draw every frame.
+        self.sprites = []
+
+        self._init_world()
+        self._init_circle_vertex_list()
+
+    def _init_world(self):
+        aabb = create_aabb((-100., -100.), (100., 100.))
+        self.world = b2World(aabb, (0., 0.), True)
+
+    def _init_circle_vertex_list(self):
+        self.circle_vertex_list = create_circle_vertex_list()
+
+    def step(self):
+        self.time += self.dt
+        for controller in self.controllers:
+            controller.step()
+        self.world.Step(self.dt, 10, 10)
+        rabbyt.set_time(self.time)
+
+    def draw(self, width, height):
+        glPushMatrix()
+        glTranslatef(float(width // 2), float(height // 2), 0.)
+        self.sprites.sort(key=attrgetter('z'))
+        rabbyt.render_unsorted(self.sprites)
+        glPopMatrix()
+
+    def debug_draw(self, width, height):
+        glPushMatrix()
+        glTranslatef(float(width // 2), float(height // 2), 0.)
+        glScalef(10., 10., 10.)
+        glColor3f(0., 1., 0.)
+        glDisable(GL_TEXTURE_2D)
+        debug_draw(self.world)
+        glPopMatrix()
+
+class Controller(object):
+    def create(self):
+        pass
+
+    def delete(self):
+        pass
+
+class Challenge(Controller):
     """A challenge that the player encounters and must endure or overcome."""
     pass
 
@@ -99,84 +175,47 @@ class AsteroidField(Challenge):
         self.screen.draw_sprites.extend([asteroid, asteroid_ao,
                                          asteroid_shadow])
 
-class MySprite(rabbyt.Sprite):
-    z = rabbyt.anim_slot()
+class Battery(Controller):
+    def __init__(self, ship):
+        self.ship = ship
 
-def create_aabb(lower_bound, upper_bound):
-    aabb = b2AABB()
-    aabb.lowerBound = lower_bound
-    aabb.upperBound = upper_bound
-    return aabb
-
-def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
-    body_def = b2BodyDef()
-    body_def.position = position
-    body = world.CreateBody(body_def)
-    shape_def = b2CircleDef()
-    shape_def.radius = radius
-    shape_def.density = density
-    body.CreateShape(shape_def)
-    body.SetMassFromShapes()
-    return body
-
-class Camera(object):
-    def __init__(self):
-        self.position = 0., 0.
-
-class Level(object):
-    dt = 1. / 60.
-
-    def __init__(self):
-        self.time = 0.
-        self.actors = []
-        self.sprites = []
-        self._init_world()
-        self._init_circle_vertex_list()
-
-    def _init_world(self):
-        aabb = create_aabb((-100., -100.), (100., 100.))
-        self.world = b2World(aabb, (0., 0.), True)
-
-    def _init_circle_vertex_list(self):
-        self.circle_vertex_list = create_circle_vertex_list()
-
-    def step(self):
-        self.time += self.dt
-        for actor in self.actors:
-            actor.step()
-        self.world.Step(self.dt, 10, 10)
-        rabbyt.set_time(self.time)
-
-    def draw(self, width, height):
-        glPushMatrix()
-        glTranslatef(width // 2, height // 2, 0)
-        self.sprites.sort(key=attrgetter('z'))
-        rabbyt.render_unsorted(self.sprites)
-        glPopMatrix()
-
-    def debug_draw(self, width, height):
-        glPushMatrix()
-        glTranslatef(width // 2, height // 2, 0)
-        glScalef(10., 10., 10.)
-        glColor3f(0., 1., 0.)
-        glDisable(GL_TEXTURE_2D)
-        debug_draw(self.world)
-        glPopMatrix()
-
-class Actor(object):
+class LaserBattery(Battery):
     pass
 
-class Ship(Actor):
+class MissileBattery(Battery):
+    pass
+
+class Cannon(Controller):
+    pass
+
+class LaserCannon(Cannon):
+    pass
+
+class MissileRamp(Cannon):
+    pass
+
+class Shot(Controller):
+    pass
+
+class LaserBeam(Shot):
+    pass
+
+class Missile(Shot):
+    pass
+
+class Ship(Controller):
     def __init__(self, level):
         self.level = level
         self.keys = set()
         self.thrust = b2Vec2(0., 0.)
+        self.batteries = [LaserBattery(self)]
+        self.battery_index = 0
         self._init_body()
         self._init_sprite()
-        self.level.actors.append(self)
+        self.level.controllers.append(self)
 
     def delete(self):
-        self.level.actors.remove(self)
+        self.level.controllers.remove(self)
         self.level.sprites.remove(self.sprite)
         self.level.world.DestroyBody(self.body)
 
@@ -207,7 +246,7 @@ class Ship(Actor):
 
         self.sprite.xy = (self.body.position * 10.).tuple()
 
-class Asteroid(Actor):
+class Asteroid(Controller):
     def __init__(self, level):
         self.level = level
         self._init_body()
@@ -244,16 +283,19 @@ class GameScreen(object):
         self.ship.on_key_release(symbol, modifiers)
             
 class MyWindow(pyglet.window.Window):
-    def __init__(self, **kwargs):
+    def __init__(self, fps=False, **kwargs):
         super(MyWindow, self).__init__(**kwargs)
         if self.fullscreen:
             self.set_exclusive_mouse(True)
             self.set_exclusive_keyboard(True)
         rabbyt.set_default_attribs()
+        self.fps_display = pyglet.clock.ClockDisplay() if fps else None
         self.my_screen = GameScreen(self)
 
     def on_draw(self):
         self.my_screen.on_draw()
+        if self.fps_display is not None:
+            self.fps_display.draw()
 
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
@@ -264,8 +306,30 @@ class MyWindow(pyglet.window.Window):
     def on_key_release(self, symbol, modifiers):
         self.my_screen.on_key_release(symbol, modifiers)
 
+def help():
+    print """
+Usage: burst [OPTION]...
+
+Options:
+  --fps         Display FPS counter.
+  --fullscreen  Run in fullscreen mode.
+  -h, --help    Print this helpful text and exit.
+  --test        Run tests and exit.
+""".strip()
+
+def test():
+    import doctest
+    doctest.testmod()
+
 def main():
-    window = MyWindow(fullscreen=('--fullscreen' in sys.argv))
+    args = sys.argv[1:]
+    if '-h' in args or '--help' in args:
+        return help()
+    if '--test' in args:
+        return test()
+    fps = '--fps' in args
+    fullscreen = '--fullscreen' in args
+    window = MyWindow(fps=fps, fullscreen=fullscreen)
     pyglet.app.run()
 
 if __name__ == '__main__':
