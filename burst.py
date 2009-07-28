@@ -61,13 +61,15 @@ def create_aabb(lower_bound, upper_bound):
     aabb.upperBound = upper_bound
     return aabb
 
-def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
+def create_circle_body(world, position=(0., 0.), radius=1., density=1.,
+                       group_index=0):
     body_def = b2BodyDef()
     body_def.position = position
     body = world.CreateBody(body_def)
     shape_def = b2CircleDef()
     shape_def.radius = radius
     shape_def.density = density
+    shape_def.filter.groupIndex = group_index
     body.CreateShape(shape_def)
     body.SetMassFromShapes()
     return body
@@ -90,8 +92,8 @@ class Level(object):
         self.debug = debug
         self.time = 0.
         
-        # The controllers to call every step.
-        self.controllers = []
+        # Things coordinate bodies and sprites.
+        self.things = []
 
         # The sprites to draw every frame.
         self.sprites = []
@@ -109,8 +111,8 @@ class Level(object):
 
     def step(self):
         self.time += self.dt
-        for controller in self.controllers:
-            controller.step()
+        for thing in self.things:
+            thing.step()
         self.world.Step(self.dt, 10, 10)
 
     def draw(self, width, height):
@@ -118,8 +120,8 @@ class Level(object):
         glTranslatef(float(width // 2), float(height // 2), 0.)
         scale = float(min(width, height)) / self.camera.scale
         glScalef(scale, scale, scale)
-        for controller in self.controllers:
-            controller.draw()
+        for thing in self.things:
+            thing.draw()
         rabbyt.set_time(self.time)
         self.sprites.sort(key=attrgetter('z'))
         rabbyt.render_unsorted(self.sprites)
@@ -129,14 +131,54 @@ class Level(object):
             debug_draw(self.world)
         glPopMatrix()
 
-class Controller(object):
-    def create(self):
-        pass
+class Thing(object):
+    """A physical, visible thing.
+
+    Things have a circular physics body and a sprite that moves and rotates
+    with the body.
+
+    For non-physical stuff, such as pure special effects, use sprites directly
+    instead.
+    """
+
+    radius = 1.
+    density = 1.
+    group_index = 0
+    texture = None
+    scale = 1.
+
+    def __init__(self, level, position=(0., 0.)):
+        self.level = level
+        self._init_body(position=position)
+        self._init_sprite()
+        self.level.things.append(self)
+
+    def _init_body(self, position):
+        self.body = create_circle_body(self.level.world,
+                                       position=position,
+                                       radius=self.radius,
+                                       density=self.density,
+                                       group_index=self.group_index)
+        self.body.userData = self
+
+    def _init_sprite(self):
+        self.sprite = MySprite(self.texture, scale=self.scale)
+        self.level.sprites.append(self.sprite)
 
     def delete(self):
+        self.level.things.remove(self)
+        self.level.sprites.remove(self.sprite)
+        self.level.world.DestroyBody(self.body)
+
+    def step(self):
         pass
 
-class Challenge(Controller):
+    # TODO: Connect the sprite and the body with a Rabbyt anim function
+    # instead?
+    def draw(self):
+        self.sprite.xy = self.body.position.tuple()
+
+class Challenge(object):
     """A challenge that the player encounters and must endure or overcome."""
     pass
 
@@ -183,26 +225,35 @@ class AsteroidField(Challenge):
         self.screen.draw_sprites.extend([asteroid, asteroid_ao,
                                          asteroid_shadow])
 
-class Battery(Controller):
-    def __init__(self, ship):
-        self.ship = ship
-
-class LaserBattery(Battery):
-    pass
-
-class MissileBattery(Battery):
-    pass
-
-class Cannon(Controller):
+class Cannon(Thing):
     pass
 
 class LaserCannon(Cannon):
-    pass
+    def __init__(self, level, ship, local_position):
+        self.level = level
+        self.ship = ship
+        self._init_body()
+        self._init_sprite()
+        self.level.things.append(self)
+
+    def delete(self):
+        self.level.things.remove(self)
+        self.level.sprites.remove(self.sprite)
+        self.level.world.DestroyBody(self.body)
+
+    def _init_body(self):
+        self.body = create_circle_body(self.level.world,
+                                       group_index=self.ship.group_index)
+        self.body.userData = self
+
+    def _init_sprite(self):
+        self.sprite = MySprite('laser-cannon.png', scale=0.015)
+        self.level.sprites.append(self.sprite)
 
 class MissileRamp(Cannon):
     pass
 
-class Shot(Controller):
+class Shot(Thing):
     pass
 
 class LaserBeam(Shot):
@@ -211,39 +262,24 @@ class LaserBeam(Shot):
 class Missile(Shot):
     pass
 
-class Ship(Controller):
+class Ship(Thing):
     thrust_force = 700.
     damping = 20.
+    cannon_slots = [(-0.5, 0.), (0., 0.5), (0.5, 0.)]
+    group_index = -1
+    texture = 'ship.png'
+    scale = 0.015
 
     def __init__(self, level):
-        self.level = level
+        super(Ship, self).__init__(level)
         self.thrust = b2Vec2(0., 0.)
-        self.batteries = [LaserBattery(self)]
-        self.battery_index = 0
-        self._init_body()
-        self._init_sprite()
-        self.level.controllers.append(self)
-
-    def delete(self):
-        self.level.controllers.remove(self)
-        self.level.sprites.remove(self.sprite)
-        self.level.world.DestroyBody(self.body)
-
-    def _init_body(self):
-        self.body = create_circle_body(self.level.world)
-        self.body.userData = self
-
-    def _init_sprite(self):
-        self.sprite = MySprite('ship.png', scale=0.015)
-        self.level.sprites.append(self.sprite)
+        self.cannons = [LaserCannon(self.level, self, self.cannon_slots[0]),
+                        None, None]
 
     def step(self):
         force = (self.thrust * self.thrust_force -
                  self.body.GetLinearVelocity() * self.damping)
         self.body.ApplyForce(force, self.body.GetWorldCenter())
-
-    def draw(self):
-        self.sprite.xy = self.body.position.tuple()
 
 class ShipControls(object):
     def __init__(self, level, ship):
@@ -269,7 +305,7 @@ class ShipControls(object):
         thrust.Normalize()
         self.ship.thrust = thrust
 
-class Asteroid(Controller):
+class Asteroid(Thing):
     def __init__(self, level):
         self.level = level
         self._init_body()
