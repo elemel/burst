@@ -75,6 +75,7 @@ def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
 class Camera(object):
     def __init__(self):
         self.position = 0., 0.
+        self.scale = 20.
 
 class Level(object):
     dt = 1. / 60.
@@ -90,6 +91,7 @@ class Level(object):
 
         self._init_world()
         self._init_circle_vertex_list()
+        self.camera = Camera()
 
     def _init_world(self):
         aabb = create_aabb((-100., -100.), (100., 100.))
@@ -104,10 +106,13 @@ class Level(object):
             controller.step()
         self.world.Step(self.dt, 10, 10)
         rabbyt.set_time(self.time)
+        for controller in self.controllers:
+            controller.draw()
 
     def draw(self, width, height):
         glPushMatrix()
         glTranslatef(float(width // 2), float(height // 2), 0.)
+        glScalef(self.camera.scale, self.camera.scale, self.camera.scale)
         self.sprites.sort(key=attrgetter('z'))
         rabbyt.render_unsorted(self.sprites)
         glPopMatrix()
@@ -115,7 +120,7 @@ class Level(object):
     def debug_draw(self, width, height):
         glPushMatrix()
         glTranslatef(float(width // 2), float(height // 2), 0.)
-        glScalef(10., 10., 10.)
+        glScalef(self.camera.scale, self.camera.scale, self.camera.scale)
         glColor3f(0., 1., 0.)
         glDisable(GL_TEXTURE_2D)
         debug_draw(self.world)
@@ -204,6 +209,9 @@ class Missile(Shot):
     pass
 
 class Ship(Controller):
+    thrust_force = 1000.
+    damping = 20.
+
     def __init__(self, level):
         self.level = level
         self.keys = set()
@@ -224,7 +232,7 @@ class Ship(Controller):
         self.body.userData = self
 
     def _init_sprite(self):
-        self.sprite = MySprite('ship.png', scale=0.35)
+        self.sprite = MySprite('ship.png', scale=0.015)
         self.level.sprites.append(self.sprite)
 
     def on_key_press(self, symbol, modifiers):
@@ -241,10 +249,12 @@ class Ship(Controller):
 
         self.thrust = b2Vec2(right - left, up - down)
         self.thrust.Normalize()
-        force = self.thrust * 1000. - self.body.GetLinearVelocity() * 20.
+        force = (self.thrust * self.thrust_force -
+                 self.body.GetLinearVelocity() * self.damping)
         self.body.ApplyForce(force, self.body.GetWorldCenter())
 
-        self.sprite.xy = (self.body.position * 10.).tuple()
+    def draw(self):
+        self.sprite.xy = self.body.position.tuple()
 
 class Asteroid(Controller):
     def __init__(self, level):
@@ -285,9 +295,8 @@ class GameScreen(object):
 class MyWindow(pyglet.window.Window):
     def __init__(self, fps=False, **kwargs):
         super(MyWindow, self).__init__(**kwargs)
-        if self.fullscreen:
-            self.set_exclusive_mouse(True)
-            self.set_exclusive_keyboard(True)
+        self.set_exclusive_mouse(self.fullscreen)
+        self.set_exclusive_keyboard(self.fullscreen)
         rabbyt.set_default_attribs()
         self.fps_display = pyglet.clock.ClockDisplay() if fps else None
         self.my_screen = GameScreen(self)
@@ -300,6 +309,10 @@ class MyWindow(pyglet.window.Window):
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
             self.on_close()
+        elif symbol == pyglet.window.key.F11:
+            self.set_fullscreen(not self.fullscreen)
+            self.set_exclusive_mouse(self.fullscreen)
+            self.set_exclusive_keyboard(self.fullscreen)
         else:
             self.my_screen.on_key_press(symbol, modifiers)
 
