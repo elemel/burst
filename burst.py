@@ -217,7 +217,6 @@ class Ship(Controller):
 
     def __init__(self, level):
         self.level = level
-        self.keys = set()
         self.thrust = b2Vec2(0., 0.)
         self.batteries = [LaserBattery(self)]
         self.battery_index = 0
@@ -238,26 +237,37 @@ class Ship(Controller):
         self.sprite = MySprite('ship.png', scale=0.015)
         self.level.sprites.append(self.sprite)
 
-    def on_key_press(self, symbol, modifiers):
-        self.keys.add(symbol)
-
-    def on_key_release(self, symbol, modifiers):
-        self.keys.discard(symbol)
-
     def step(self):
-        left = float(pyglet.window.key.LEFT in self.keys)
-        right = float(pyglet.window.key.RIGHT in self.keys)
-        up = float(pyglet.window.key.UP in self.keys)
-        down = float(pyglet.window.key.DOWN in self.keys)
-
-        self.thrust = b2Vec2(right - left, up - down)
-        self.thrust.Normalize()
         force = (self.thrust * self.thrust_force -
                  self.body.GetLinearVelocity() * self.damping)
         self.body.ApplyForce(force, self.body.GetWorldCenter())
 
     def draw(self):
         self.sprite.xy = self.body.position.tuple()
+
+class ShipControls(object):
+    def __init__(self, level, ship):
+        self.level = level
+        self.ship = ship
+        self.keys = set()
+
+    def on_key_press(self, symbol, modifiers):
+        self.keys.add(symbol)
+        self.update()
+
+    def on_key_release(self, symbol, modifiers):
+        self.keys.discard(symbol)
+        self.update()
+
+    def update(self):
+        left = float(pyglet.window.key.LEFT in self.keys)
+        right = float(pyglet.window.key.RIGHT in self.keys)
+        up = float(pyglet.window.key.UP in self.keys)
+        down = float(pyglet.window.key.DOWN in self.keys)
+
+        thrust = b2Vec2(right - left, up - down)
+        thrust.Normalize()
+        self.ship.thrust = thrust
 
 class Asteroid(Controller):
     def __init__(self, level):
@@ -273,6 +283,7 @@ class GameScreen(object):
         self.window = window
         self.level = Level(debug)
         self.ship = Ship(self.level)
+        self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
 
@@ -289,10 +300,10 @@ class GameScreen(object):
         pyglet.clock.unschedule(self.step)
 
     def on_key_press(self, symbol, modifiers):
-        self.ship.on_key_press(symbol, modifiers)
+        self.controls.on_key_press(symbol, modifiers)
 
     def on_key_release(self, symbol, modifiers):
-        self.ship.on_key_release(symbol, modifiers)
+        self.controls.on_key_release(symbol, modifiers)
             
 class MyWindow(pyglet.window.Window):
     def __init__(self, fps=False, debug=False, **kwargs):
