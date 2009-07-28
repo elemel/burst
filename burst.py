@@ -74,13 +74,20 @@ def create_circle_body(world, position=(0., 0.), radius=1., density=1.):
 
 class Camera(object):
     def __init__(self):
+        # Translation, in meters.
         self.position = 0., 0.
-        self.scale = 20.
+
+        # Minimum width and height of screen, in meters.
+        self.scale = 30.
+
+        # Rotation, in degrees.
+        self.angle = 0.
 
 class Level(object):
     dt = 1. / 60.
 
-    def __init__(self):
+    def __init__(self, debug=False):
+        self.debug = debug
         self.time = 0.
         
         # The controllers to call every step.
@@ -105,25 +112,21 @@ class Level(object):
         for controller in self.controllers:
             controller.step()
         self.world.Step(self.dt, 10, 10)
-        rabbyt.set_time(self.time)
-        for controller in self.controllers:
-            controller.draw()
 
     def draw(self, width, height):
         glPushMatrix()
         glTranslatef(float(width // 2), float(height // 2), 0.)
-        glScalef(self.camera.scale, self.camera.scale, self.camera.scale)
+        scale = float(min(width, height)) / self.camera.scale
+        glScalef(scale, scale, scale)
+        for controller in self.controllers:
+            controller.draw()
+        rabbyt.set_time(self.time)
         self.sprites.sort(key=attrgetter('z'))
         rabbyt.render_unsorted(self.sprites)
-        glPopMatrix()
-
-    def debug_draw(self, width, height):
-        glPushMatrix()
-        glTranslatef(float(width // 2), float(height // 2), 0.)
-        glScalef(self.camera.scale, self.camera.scale, self.camera.scale)
-        glColor3f(0., 1., 0.)
-        glDisable(GL_TEXTURE_2D)
-        debug_draw(self.world)
+        if self.debug:
+            glColor3f(0., 1., 0.)
+            glDisable(GL_TEXTURE_2D)
+            debug_draw(self.world)
         glPopMatrix()
 
 class Controller(object):
@@ -268,8 +271,7 @@ class Asteroid(Controller):
 class GameScreen(object):
     def __init__(self, window, debug):
         self.window = window
-        self.debug = debug
-        self.level = Level()
+        self.level = Level(debug)
         self.ship = Ship(self.level)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
@@ -282,8 +284,6 @@ class GameScreen(object):
     def on_draw(self):
         self.window.clear()
         self.level.draw(self.window.width, self.window.height)
-        if self.debug:
-            self.level.debug_draw(self.window.width, self.window.height)
 
     def close(self):
         pyglet.clock.unschedule(self.step)
@@ -350,9 +350,10 @@ Usage: burst [OPTION]...
 Options:
   --debug       Draw debug graphics.
   --fps         Display FPS counter.
-  --fullscreen  Run in fullscreen mode.
+  --fullscreen  Run in fullscreen mode (default).
   -h, --help    Print this helpful text and exit.
   --test        Run tests and exit.
+  --windowed    Run in windowed mode.
 """.strip()
 
 def test():
@@ -367,7 +368,12 @@ def main():
         return test()
     debug = '--debug' in args
     fps = '--fps' in args
-    fullscreen = '--fullscreen' in args
+    fullscreen = True
+    for arg in args:
+        if arg == '--fullscreen':
+            fullscreen = True
+        if arg == '--windowed':
+            fullscreen = False
     window = MyWindow(debug=debug, fps=fps, fullscreen=fullscreen)
     pyglet.app.run()
 
