@@ -121,8 +121,6 @@ class Level(object):
         glTranslatef(float(width // 2), float(height // 2), 0.)
         scale = float(min(width, height)) / self.camera.scale
         glScalef(scale, scale, scale)
-        for thing in self.things:
-            thing.draw()
         rabbyt.set_time(self.time)
         self.sprites.sort(key=attrgetter('z'))
         rabbyt.render_unsorted(self.sprites)
@@ -167,6 +165,10 @@ class Thing(object):
         self.sprite = MySprite(self.texture, scale=self.scale)
         self.level.sprites.append(self.sprite)
 
+        self.sprite.x = lambda: self.body.position.x
+        self.sprite.y = lambda: self.body.position.y
+        self.sprite.rot = lambda: rad_to_deg(self.body.angle)
+
     def delete(self):
         self.level.things.remove(self)
         self.level.sprites.remove(self.sprite)
@@ -174,12 +176,6 @@ class Thing(object):
 
     def step(self):
         pass
-
-    # TODO: Connect the sprite and the body with a Rabbyt anim function
-    # instead?
-    def draw(self):
-        self.sprite.xy = self.body.position.tuple()
-        self.sprite.rot = rad_to_deg(self.body.angle)
 
 class Challenge(object):
     """A challenge that the player encounters and must endure or overcome."""
