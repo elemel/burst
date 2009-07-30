@@ -62,7 +62,8 @@ def create_aabb(lower_bound, upper_bound):
     return aabb
 
 def create_circle_body(world, position=(0., 0.), linear_velocity=(0., 0.),
-                       angle=0., radius=1., density=1., group_index=0):
+                       angle=0., angular_velocity=0., radius=1., density=1.,
+                       group_index=0, sensor=False):
     body_def = b2BodyDef()
     body_def.position = position
     body_def.angle = angle
@@ -71,9 +72,11 @@ def create_circle_body(world, position=(0., 0.), linear_velocity=(0., 0.),
     shape_def.radius = radius
     shape_def.density = density
     shape_def.filter.groupIndex = group_index
+    shape_def.isSensor = sensor
     body.CreateShape(shape_def)
     body.SetMassFromShapes()
     body.linearVelocity = linear_velocity
+    body.angularVelocity = angular_velocity
     return body
 
 def create_prismatic_joint(world, body_1, body_2, anchor=None, axis=None,
@@ -96,7 +99,7 @@ def create_prismatic_joint(world, body_1, body_2, anchor=None, axis=None,
 class Camera(object):
     def __init__(self):
         # Translation, in meters.
-        self.position = 0., 0.
+        self.position = b2Vec2(0., 0.)
 
         # Minimum width and height of screen, in meters.
         self.scale = 30.
@@ -120,10 +123,15 @@ class Level(object):
         self._init_world()
         self._init_circle_vertex_list()
         self.camera = Camera()
+        self.challenge = AsteroidField(level=self)
 
     def _init_world(self):
         aabb = create_aabb((-100., -100.), (100., 100.))
         self.world = b2World(aabb, (0., 0.), True)
+        self.contact_listener = MyContactListener()
+        self.world.SetContactListener(self.contact_listener)
+        self.boundary_listener = MyBoundaryListener()
+        self.world.SetBoundaryListener(self.boundary_listener)
 
     def _init_circle_vertex_list(self):
         self.circle_vertex_list = create_circle_vertex_list()
@@ -133,6 +141,17 @@ class Level(object):
         for thing in self.things:
             thing.step()
         self.world.Step(self.dt, 10, 10)
+
+        contacts = list(self.contact_listener.contacts)
+        self.contact_listener.contacts.clear()
+        for thing_1, thing_2 in contacts:
+            thing_1.collide(thing_2)
+            thing_2.collide(thing_1)
+
+        boundary_violators = list(self.boundary_listener.violators)
+        self.boundary_listener.violators.clear()
+        for thing in boundary_violators:
+            thing.delete()
 
     def draw(self, width, height):
         glPushMatrix()
@@ -147,6 +166,24 @@ class Level(object):
             glDisable(GL_TEXTURE_2D)
             debug_draw(self.world)
         glPopMatrix()
+
+class MyContactListener(b2ContactListener):
+    def __init__(self):
+        super(MyContactListener, self).__init__()
+        self.contacts = set()
+
+    def Add(self, point):
+        thing_1 = point.shape1.GetBody().userData
+        thing_2 = point.shape2.GetBody().userData
+        self.contacts.add((thing_1, thing_2))
+
+class MyBoundaryListener(b2BoundaryListener):
+    def __init__(self):
+        super(MyBoundaryListener, self).__init__()
+        self.violators = set()
+
+    def Violation(self, body):
+        self.violators.add(body.userData)
 
 class Thing(object):
     """A physical, visible thing.
@@ -164,24 +201,28 @@ class Thing(object):
     texture = None
     scale = 1.
     fade_dt = 0.5
+    sensor = False
 
     def __init__(self, level, position=(0., 0.), linear_velocity=(0., 0.),
-                 angle=0., z=0.):
+                 angle=0., angular_velocity=0., z=0.):
+        self.deleted = False
         self.level = level
         self._init_body(position=position, linear_velocity=linear_velocity,
-                        angle=angle)
+                        angle=angle, angular_velocity=angular_velocity)
         self._init_sprite(z=z)
         self.level.things.append(self)
 
     def _init_body(self, position=(0., 0.), linear_velocity=(0., 0.),
-                   angle=0.):
+                   angle=0., angular_velocity=0.):
         self.body = create_circle_body(self.level.world,
                                        position=position,
                                        linear_velocity=linear_velocity,
                                        angle=angle,
+                                       angular_velocity=angular_velocity,
                                        radius=self.radius,
                                        density=self.density,
-                                       group_index=self.group_index)
+                                       group_index=self.group_index,
+                                       sensor=self.sensor)
         self.body.userData = self
 
     def _init_sprite(self, z=0.):
@@ -196,9 +237,12 @@ class Thing(object):
         self.fade_in()
 
     def delete(self):
-        self.level.things.remove(self)
-        self.level.sprites.remove(self.sprite)
-        self.level.world.DestroyBody(self.body)
+        if not self.deleted:
+            self.deleted = True
+            self.level.things.remove(self)
+            self.level.sprites.remove(self.sprite)
+            self.level.world.DestroyBody(self.body)
+            self.body = None
 
     def step(self):
         pass
@@ -211,52 +255,42 @@ class Thing(object):
         dt = self.fade_dt * self.sprite.alpha
         self.sprite.alpha = rabbyt.lerp(end=0., dt=self.fade_dt)
 
+    def collide(self, other):
+        pass
+
 class Challenge(object):
     """A challenge that the player encounters and must endure or overcome."""
-    pass
+    def __init__(self, level):
+        self.level = level
+
+    def delete(self):
+        pass
+
+    def step(self):
+        pass
 
 class AsteroidField(Challenge):
     """The player must navigate through an asteroid field."""
 
-    def __init__(self, screen):
-        self.screen = screen
-        self.asteroid_count = 0
+    def __init__(self, **kwargs):
+        super(AsteroidField, self).__init__(**kwargs)
         for _ in xrange(100):
             self.create_asteroid()
 
-    def step(self, dt):
-        pass
-
-    def close(self):
-        pass
-
     def create_asteroid(self):
-        self.asteroid_count += 1
-        angle = 2 * pi * random.random()
-        distance = 1000
-        x = self.screen.ship.x + distance * cos(angle)
-        y = self.screen.ship.y + distance * sin(angle)
-        scale = random.gauss(0.5, 0.1)
-        asteroid = MySprite('asteroid.png', scale=scale, x=x, y=y)
-        asteroid.x = rabbyt.lerp(end=(asteroid.x + 200 *
-                                 (random.random() - 0.5)),
-                                 dt=1, extend='extrapolate')
-        asteroid.y = rabbyt.lerp(end=(asteroid.y + 200 *
-                                 (random.random() - 0.5)),
-                                 dt=1, extend='extrapolate')
-        asteroid.z = -self.asteroid_count
-        asteroid.rot = 360 * random.random()
-        asteroid.rot = rabbyt.lerp(end=(asteroid.rot + 60 *
-                                        (random.random() - 0.5)),
-                                   dt=1, extend='extrapolate')
-        asteroid.red = random.gauss(0.8, 0.2)
-        asteroid.green = random.gauss(0.8, 0.2)
-        asteroid.blue = random.gauss(0.8, 0.2)
-        asteroid_ao = create_ao(asteroid, 'asteroid-shadow.png')
-        asteroid_shadow = create_shadow(asteroid, 'asteroid-shadow.png')
-        self.screen.collision_sprites.append(asteroid)
-        self.screen.draw_sprites.extend([asteroid, asteroid_ao,
-                                         asteroid_shadow])
+        position_angle = 2 * pi * random.random()
+        distance = random.gauss(50., 1.)
+        position = (self.level.camera.position +
+                    distance * b2Vec2(cos(position_angle),
+                                      sin(position_angle)))
+        linear_velocity = 10. * b2Vec2(random.random() - 0.5,
+                                       random.random() - 0.5)
+        orientation_angle = 2 * pi * random.random()
+        angular_velocity = random.gauss(0., 0.5)
+        asteroid = Asteroid(level=self.level, position=position,
+                            linear_velocity=linear_velocity,
+                            angle=orientation_angle,
+                            angular_velocity=angular_velocity)
 
 class Cannon(Thing):
     radius = 0.1
@@ -315,6 +349,10 @@ class PlasmaShot(Shot):
     scale = 0.015
     group_index = -1
     radius = 0.1
+    sensor = True
+
+    def collide(self, other):
+        self.delete()
 
 class Missile(Shot):
     pass
@@ -398,13 +436,15 @@ class ShipControls(object):
             cannon.firing = pyglet.window.key.SPACE in self.keys
 
 class Asteroid(Thing):
-    def __init__(self, level):
-        self.level = level
-        self._init_body()
+    texture = 'asteroid.png'
+    group_index = -2
+    density = 10.
 
-    def _init_body(self):
-        self.body = create_circle_body(self.level.world)
-        self.body.userData = self
+    def __init__(self, **kwargs):
+        size = random.gauss(1., 0.1)
+        self.scale = 0.025 * size
+        self.radius = 3.25 * size
+        super(Asteroid, self).__init__(**kwargs)
 
 class GameScreen(object):
     def __init__(self, window, debug):
