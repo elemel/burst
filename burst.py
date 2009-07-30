@@ -61,8 +61,8 @@ def create_aabb(lower_bound, upper_bound):
     aabb.upperBound = upper_bound
     return aabb
 
-def create_circle_body(world, position=(0., 0.), angle=0., radius=1.,
-                       density=1., group_index=0):
+def create_circle_body(world, position=(0., 0.), linear_velocity=(0., 0.),
+                       angle=0., radius=1., density=1., group_index=0):
     body_def = b2BodyDef()
     body_def.position = position
     body_def.angle = angle
@@ -73,13 +73,14 @@ def create_circle_body(world, position=(0., 0.), angle=0., radius=1.,
     shape_def.filter.groupIndex = group_index
     body.CreateShape(shape_def)
     body.SetMassFromShapes()
+    body.linearVelocity = linear_velocity
     return body
 
 def create_prismatic_joint(world, body_1, body_2, anchor=None, axis=None,
                            lower_translation=-1., upper_translation=1.,
                            max_motor_force=1., motor_speed=1.):
     if anchor is None:
-        anchor = body_2.GetWorldCenter()
+        anchor = body_2.position
     if axis is None:
         axis = body_1.GetWorldVector(b2Vec2(0., 1.))
     joint_def = b2PrismaticJointDef()
@@ -162,17 +163,21 @@ class Thing(object):
     group_index = 0
     texture = None
     scale = 1.
-    fade_dt = 1.
+    fade_dt = 0.5
 
-    def __init__(self, level, position=(0., 0.), angle=0., z=0.):
+    def __init__(self, level, position=(0., 0.), linear_velocity=(0., 0.),
+                 angle=0., z=0.):
         self.level = level
-        self._init_body(position=position, angle=angle)
+        self._init_body(position=position, linear_velocity=linear_velocity,
+                        angle=angle)
         self._init_sprite(z=z)
         self.level.things.append(self)
 
-    def _init_body(self, position=(0., 0.), angle=0.):
+    def _init_body(self, position=(0., 0.), linear_velocity=(0., 0.),
+                   angle=0.):
         self.body = create_circle_body(self.level.world,
                                        position=position,
+                                       linear_velocity=linear_velocity,
                                        angle=angle,
                                        radius=self.radius,
                                        density=self.density,
@@ -256,19 +261,60 @@ class AsteroidField(Challenge):
 class Cannon(Thing):
     radius = 0.1
 
-class LaserCannon(Cannon):
-    texture = 'laser-cannon.png'
+    def __init__(self, ship, **kwargs):
+        super(Cannon, self).__init__(**kwargs)
+        self.ship = ship
+        self.firing = False
+        self.fire_time = self.level.time
+
+class PlasmaCannon(Cannon):
+    texture = 'plasma-cannon.png'
     scale = 0.015
     group_index = -1
+    recoil = 1.5
+    cooldown_mean = 0.3
+    cooldown_dev = 0.05
+    muzzle_velocity = 50.
+
+    def __init__(self, **kwargs):
+        super(PlasmaCannon, self).__init__(**kwargs)
+        self.cooldown = random.gauss(self.cooldown_mean, self.cooldown_dev)
+
+    def step(self):
+        if self.firing and self.fire_time + self.cooldown < self.level.time:
+            # Spread the cooldown, so that the cannons are only synchronized
+            # for the very first shots after a cease fire.
+            self.fire_time = self.level.time
+            self.cooldown = random.gauss(self.cooldown_mean, self.cooldown_dev)
+            self.fire()
+
+    def fire(self):
+        # Don't add the ship's linear velocity to the shot's linear velocity.
+        # If the ship is moving sideways, the shots would also move sideways.
+        # It doesn't look good, and it doesn't feel good either. Space Invaders
+        # was right.
+        #
+        # TODO: However, we may want to add the linear velocity component in
+        # the cannon's direction, or adjust the linear velocity for scrolling.
+        muzzle_velocity = b2Vec2(0., self.muzzle_velocity)
+        linear_velocity = self.body.GetWorldVector(muzzle_velocity)
+        shot = PlasmaShot(level=self.level, position=self.body.position,
+                          linear_velocity=linear_velocity,
+                          angle=self.body.angle)
+        recoil = self.recoil * self.body.GetWorldVector(b2Vec2(0., -1.))
+        self.body.ApplyImpulse(recoil, self.body.position)
 
 class MissileRamp(Cannon):
     pass
 
 class Shot(Thing):
-    pass
+    fade_dt = 0.1
 
-class LaserBeam(Shot):
-    pass
+class PlasmaShot(Shot):
+    texture = 'plasma-shot.png'
+    scale = 0.015
+    group_index = -1
+    radius = 0.1
 
 class Missile(Shot):
     pass
@@ -278,23 +324,25 @@ class Ship(Thing):
     damping_force = 20.
     turn_torque = 500.
     damping_torque = 20.
-    cannon_slots = [(-0.75, 0.25), (0., 1.), (0.75, 0.25)]
+    cannon_slots = [(-0.75, 0.75), (0., 1.5), (0.75, 0.75)]
     group_index = -1
     texture = 'ship.png'
     scale = 0.015
 
-    def __init__(self, level, **kwargs):
-        super(Ship, self).__init__(level, **kwargs)
+    def __init__(self, **kwargs):
+        super(Ship, self).__init__(**kwargs)
+        self.locking = False
         self.thrust = b2Vec2(0., 0.)
         self.cannons = [None, None, None]
         for i in xrange(3):
             position = self.body.GetWorldPoint(self.cannon_slots[i])
             z = self.sprite.attrgetter('z') - 0.1
-            self.cannons[i] = LaserCannon(self.level, position=position,
-                                          angle=self.body.angle, z=z)
+            self.cannons[i] = PlasmaCannon(level=self.level, ship=self,
+                                           position=position,
+                                           angle=self.body.angle, z=z)
             create_prismatic_joint(self.level.world, self.body,
                                    self.cannons[i].body, upper_translation=0.,
-                                   max_motor_force=10., motor_speed=10.)
+                                   max_motor_force=20., motor_speed=5.)
             self.angle = self.body.angle
         self.linear_velocity = b2Vec2(0., 0.)
 
@@ -302,11 +350,16 @@ class Ship(Thing):
     #
     # TODO: Set self.angle from e.g. locking or scrolling.
     def step(self):
+        self._apply_force()
+        self._apply_torque()
+
+    def _apply_force(self):
         linear_velocity_error = self.linear_velocity - self.body.linearVelocity
         force = (self.thrust * self.thrust_force +
                  linear_velocity_error * self.damping_force)
-        self.body.ApplyForce(force, self.body.GetWorldCenter())
+        self.body.ApplyForce(force, self.body.position)
 
+    def _apply_torque(self):
         torque = (self.turn_torque * (self.angle - self.body.angle) -
                   self.damping_torque * self.body.angularVelocity)
         self.body.ApplyTorque(torque)
@@ -326,6 +379,11 @@ class ShipControls(object):
         self.update()
 
     def update(self):
+        self._update_thrust()
+        self._update_firing()
+        self.ship.locking = pyglet.window.key.ENTER in self.keys
+
+    def _update_thrust(self):
         left = float(pyglet.window.key.LEFT in self.keys)
         right = float(pyglet.window.key.RIGHT in self.keys)
         up = float(pyglet.window.key.UP in self.keys)
@@ -334,6 +392,10 @@ class ShipControls(object):
         thrust = b2Vec2(right - left, up - down)
         thrust.Normalize()
         self.ship.thrust = thrust
+
+    def _update_firing(self):
+        for cannon in self.ship.cannons:
+            cannon.firing = pyglet.window.key.SPACE in self.keys
 
 class Asteroid(Thing):
     def __init__(self, level):
@@ -348,7 +410,7 @@ class GameScreen(object):
     def __init__(self, window, debug):
         self.window = window
         self.level = Level(debug)
-        self.ship = Ship(self.level, angle=(pi / 4.))
+        self.ship = Ship(level=self.level)
         self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
@@ -436,7 +498,7 @@ Options:
 Controls:
   Arrows        Fly.
   Space         Fire.
-  Enter         Toggle targeting.
+  Enter         Toggle target locking.
 
   Escape        Exit.
   F11           Toggle fullscreen mode.
