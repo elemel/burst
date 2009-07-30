@@ -162,7 +162,7 @@ class Thing(object):
     group_index = 0
     texture = None
     scale = 1.
-    fade_dt = 0.5
+    fade_dt = 1.
 
     def __init__(self, level, position=(0., 0.), angle=0., z=0.):
         self.level = level
