@@ -324,7 +324,7 @@ class Ship(Thing):
     damping_force = 20.
     turn_torque = 500.
     damping_torque = 20.
-    cannon_slots = [(-0.75, 0.75), (0., 1.5), (0.75, 0.75)]
+    cannon_slots = [(-0.75, 1.), (0., 1.75), (0.75, 1.)]
     group_index = -1
     texture = 'ship.png'
     scale = 0.015
