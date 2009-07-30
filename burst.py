@@ -75,6 +75,23 @@ def create_circle_body(world, position=(0., 0.), angle=0., radius=1.,
     body.SetMassFromShapes()
     return body
 
+def create_prismatic_joint(world, body_1, body_2, anchor=None, axis=None,
+                           lower_translation=-1., upper_translation=1.,
+                           max_motor_force=1., motor_speed=1.):
+    if anchor is None:
+        anchor = body_2.GetWorldCenter()
+    if axis is None:
+        axis = body_1.GetWorldVector(b2Vec2(0., 1.))
+    joint_def = b2PrismaticJointDef()
+    joint_def.Initialize(body_1, body_2, anchor, axis)
+    joint_def.enableLimit = True
+    joint_def.lowerTranslation = lower_translation
+    joint_def.upperTranslation = upper_translation
+    joint_def.enableMotor = True
+    joint_def.maxMotorForce = max_motor_force
+    joint_def.motorSpeed = motor_speed
+    world.CreateJoint(joint_def)
+
 class Camera(object):
     def __init__(self):
         # Translation, in meters.
@@ -145,11 +162,12 @@ class Thing(object):
     group_index = 0
     texture = None
     scale = 1.
+    fade_dt = 0.5
 
-    def __init__(self, level, position=(0., 0.), angle=0.):
+    def __init__(self, level, position=(0., 0.), angle=0., z=0.):
         self.level = level
         self._init_body(position=position, angle=angle)
-        self._init_sprite()
+        self._init_sprite(z=z)
         self.level.things.append(self)
 
     def _init_body(self, position=(0., 0.), angle=0.):
@@ -161,13 +179,16 @@ class Thing(object):
                                        group_index=self.group_index)
         self.body.userData = self
 
-    def _init_sprite(self):
-        self.sprite = MySprite(self.texture, scale=self.scale)
+    def _init_sprite(self, z=0.):
+        self.sprite = MySprite(texture=self.texture, scale=self.scale,
+                               alpha=0., z=z)
         self.level.sprites.append(self.sprite)
 
         self.sprite.x = lambda: self.body.position.x
         self.sprite.y = lambda: self.body.position.y
         self.sprite.rot = lambda: rad_to_deg(self.body.angle)
+
+        self.fade_in()
 
     def delete(self):
         self.level.things.remove(self)
@@ -176,6 +197,14 @@ class Thing(object):
 
     def step(self):
         pass
+
+    def fade_in(self):
+        dt = self.fade_dt * (1. - self.sprite.alpha)
+        self.sprite.alpha = rabbyt.lerp(end=1., dt=dt)
+
+    def fade_out(self):
+        dt = self.fade_dt * self.sprite.alpha
+        self.sprite.alpha = rabbyt.lerp(end=0., dt=self.fade_dt)
 
 class Challenge(object):
     """A challenge that the player encounters and must endure or overcome."""
@@ -225,29 +254,12 @@ class AsteroidField(Challenge):
                                          asteroid_shadow])
 
 class Cannon(Thing):
-    pass
+    radius = 0.1
 
 class LaserCannon(Cannon):
-    def __init__(self, level, ship, local_position):
-        self.level = level
-        self.ship = ship
-        self._init_body()
-        self._init_sprite()
-        self.level.things.append(self)
-
-    def delete(self):
-        self.level.things.remove(self)
-        self.level.sprites.remove(self.sprite)
-        self.level.world.DestroyBody(self.body)
-
-    def _init_body(self):
-        self.body = create_circle_body(self.level.world,
-                                       group_index=self.ship.group_index)
-        self.body.userData = self
-
-    def _init_sprite(self):
-        self.sprite = MySprite('laser-cannon.png', scale=0.015)
-        self.level.sprites.append(self.sprite)
+    texture = 'laser-cannon.png'
+    scale = 0.015
+    group_index = -1
 
 class MissileRamp(Cannon):
     pass
@@ -263,8 +275,10 @@ class Missile(Shot):
 
 class Ship(Thing):
     thrust_force = 700.
-    damping = 20.
-    cannon_slots = [(-0.5, 0.), (0., 0.5), (0.5, 0.)]
+    damping_force = 20.
+    turn_torque = 500.
+    damping_torque = 20.
+    cannon_slots = [(-0.75, 0.25), (0., 1.), (0.75, 0.25)]
     group_index = -1
     texture = 'ship.png'
     scale = 0.015
@@ -272,20 +286,30 @@ class Ship(Thing):
     def __init__(self, level, **kwargs):
         super(Ship, self).__init__(level, **kwargs)
         self.thrust = b2Vec2(0., 0.)
-        self.cannons = [LaserCannon(self.level, self, self.cannon_slots[0]),
-                        None, None]
+        self.cannons = [None, None, None]
+        for i in xrange(3):
+            position = self.body.GetWorldPoint(self.cannon_slots[i])
+            z = self.sprite.attrgetter('z') - 0.1
+            self.cannons[i] = LaserCannon(self.level, position=position,
+                                          angle=self.body.angle, z=z)
+            create_prismatic_joint(self.level.world, self.body,
+                                   self.cannons[i].body, upper_translation=0.,
+                                   max_motor_force=10., motor_speed=10.)
+            self.angle = self.body.angle
+        self.linear_velocity = b2Vec2(0., 0.)
 
-    # TODO: While scrolling, damping should be probably be applied to the
-    # linear velocity error, i.e. linear velocity of scrolling minus linear
-    # velocity of body.
+    # TODO: Set self.linear_velocity from e.g. scrolling.
     #
-    # TODO: Regulate angle and apply angular damping. While locking, turn ship
-    # toward target or target's predicted position. While scrolling (and not
-    # locking), turn ship in the scroll direction.
+    # TODO: Set self.angle from e.g. locking or scrolling.
     def step(self):
-        force = (self.thrust * self.thrust_force -
-                 self.body.GetLinearVelocity() * self.damping)
+        linear_velocity_error = self.linear_velocity - self.body.linearVelocity
+        force = (self.thrust * self.thrust_force +
+                 linear_velocity_error * self.damping_force)
         self.body.ApplyForce(force, self.body.GetWorldCenter())
+
+        torque = (self.turn_torque * (self.angle - self.body.angle) -
+                  self.damping_torque * self.body.angularVelocity)
+        self.body.ApplyTorque(torque)
 
 class ShipControls(object):
     def __init__(self, level, ship):
@@ -406,7 +430,17 @@ Options:
   --fullscreen  Run in fullscreen mode (default).
   -h, --help    Print this helpful text and exit.
   --test        Run tests and exit.
+  -v            Enable verbose output (use with --test).
   --windowed    Run in windowed mode.
+
+Controls:
+  Arrows        Fly.
+  Space         Fire.
+  Enter         Toggle targeting.
+
+  Escape        Exit.
+  F11           Toggle fullscreen mode.
+  F12           Save a screenshot.
 """.strip()
 
 def test():
