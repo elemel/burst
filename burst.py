@@ -203,7 +203,7 @@ class Thing(object):
     density = 1.
     texture = None
     scale = 1.
-    fade_dt = 0.5
+    fade_dt = 0.2
     sensor = False
     group_index = 0
 
@@ -261,18 +261,19 @@ class Thing(object):
         self.sprite.alpha = rabbyt.lerp(end=0., dt=self.fade_dt)
 
     def fade_away(self):
-        dt = self.fade_dt * self.sprite.alpha
-        self.sprite.alpha = rabbyt.lerp(end=0., dt=self.fade_dt)
+        self.fade_out()
+
         def remove_sprite(dt, sprite):
-            self.level.sprites.remove(sprite)
-        pyglet.clock.schedule_once(remove_sprite, dt, self.sprite)
-        self.sprite.x = rabbyt.lerp(end=(self.body.position.x +
-                                         self.body.linearVelocity.x), dt=1.)
-        self.sprite.y = rabbyt.lerp(end=(self.body.position.y +
-                                         self.body.linearVelocity.y), dt=1.)
-        self.sprite.rot = rabbyt.lerp(end=rad_to_deg(self.body.angle +
-                                                     self.body.angularVelocity),
-                                      dt=1.)
+           self.level.sprites.remove(sprite)
+        pyglet.clock.schedule_once(remove_sprite, self.fade_dt, self.sprite)
+
+        end_x = self.body.position.x + self.body.linearVelocity.x
+        end_y = self.body.position.y + self.body.linearVelocity.y
+        end_rot = rad_to_deg(self.body.angle + self.body.angularVelocity)
+        self.sprite.x = rabbyt.lerp(end=end_x, dt=1., extend='extrapolate')
+        self.sprite.y = rabbyt.lerp(end=end_y, dt=1., extend='extrapolate')
+        self.sprite.rot = rabbyt.lerp(end=end_rot, dt=1., extend='extrapolate')
+
         self.sprite = None
 
     def collide(self, other):
@@ -385,6 +386,7 @@ class Ship(Thing):
     damping_torque = 20.
     cannon_slots = [(-0.75, 1.), (0., 1.75), (0.75, 1.)]
     scale = 0.015
+    fade_dt = 0.5
 
     def __init__(self, texture='ship-1-ao.png', **kwargs):
         self.texture = texture
@@ -463,16 +465,23 @@ class Asteroid(Thing):
         size = random.gauss(1., 0.1)
         self.scale = 0.025 * size
         self.radius = 3.25 * size
+        self.power = 5
         super(Asteroid, self).__init__(group_index=group_index, **kwargs)
+
+    def collide(self, other):
+        if isinstance(other, Shot):
+            self.power -= 1
+            if self.power <= 0:
+                self.delete()
 
 class GameScreen(object):
     def __init__(self, window, debug):
         self.window = window
         self.level = Level(debug)
-        self.ship = Ship(level=self.level, position=(-5., 0.), z=2.,
+        self.ship = Ship(level=self.level, position=(-10., -10.), z=2.,
                          group_index=PLAYER_1_GROUP)
         ship_2 = Ship(texture='ship-2-ao.png', level=self.level,
-                      position=(5., 0.), z=1., group_index=PLAYER_2_GROUP)
+                      position=(10., -10.), z=1., group_index=PLAYER_2_GROUP)
         self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
