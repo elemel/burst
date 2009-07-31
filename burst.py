@@ -334,7 +334,7 @@ class PlasmaCannon(Cannon):
         linear_velocity = self.body.GetWorldVector(muzzle_velocity)
         shot = PlasmaShot(level=self.level, position=self.body.position,
                           linear_velocity=linear_velocity,
-                          angle=self.body.angle)
+                          angle=self.body.angle, z=self.sprite.z)
         recoil = self.recoil * self.body.GetWorldVector(b2Vec2(0., -1.))
         self.body.ApplyImpulse(recoil, self.body.position)
 
@@ -450,7 +450,7 @@ class GameScreen(object):
     def __init__(self, window, debug):
         self.window = window
         self.level = Level(debug)
-        self.ship = Ship(level=self.level)
+        self.ship = Ship(level=self.level, z=1.)
         self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
