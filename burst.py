@@ -8,6 +8,10 @@ from operator import attrgetter
 import random
 import sys
 
+PLAYER_1_GROUP = -1
+PLAYER_2_GROUP = -2
+ASTEROID_GROUP = -3
+
 def create_circle_vertex_list(center=(0., 0.), radius=1., vertex_count=100):
     x, y = center
     coords = []
@@ -197,14 +201,15 @@ class Thing(object):
 
     radius = 1.
     density = 1.
-    group_index = 0
     texture = None
     scale = 1.
     fade_dt = 0.5
     sensor = False
+    group_index = 0
 
     def __init__(self, level, position=(0., 0.), linear_velocity=(0., 0.),
-                 angle=0., angular_velocity=0., z=0.):
+                 angle=0., angular_velocity=0., z=0., group_index=0):
+        self.group_index = group_index
         self.deleted = False
         self.level = level
         self._init_body(position=position, linear_velocity=linear_velocity,
@@ -296,19 +301,18 @@ class Cannon(Thing):
     radius = 0.1
 
     def __init__(self, ship, **kwargs):
-        super(Cannon, self).__init__(**kwargs)
+        super(Cannon, self).__init__(group_index=ship.group_index, **kwargs)
         self.ship = ship
         self.firing = False
         self.fire_time = self.level.time
 
 class PlasmaCannon(Cannon):
-    texture = 'plasma-cannon.png'
+    texture = 'plasma-cannon-ao.png'
     scale = 0.015
-    group_index = -1
     recoil = 1.5
     cooldown_mean = 0.3
     cooldown_dev = 0.05
-    muzzle_velocity = 50.
+    muzzle_velocity = 40.
 
     def __init__(self, **kwargs):
         super(PlasmaCannon, self).__init__(**kwargs)
@@ -334,7 +338,8 @@ class PlasmaCannon(Cannon):
         linear_velocity = self.body.GetWorldVector(muzzle_velocity)
         shot = PlasmaShot(level=self.level, position=self.body.position,
                           linear_velocity=linear_velocity,
-                          angle=self.body.angle, z=self.sprite.z)
+                          angle=self.body.angle, z=self.sprite.z,
+                          group_index=self.group_index)
         recoil = self.recoil * self.body.GetWorldVector(b2Vec2(0., -1.))
         self.body.ApplyImpulse(recoil, self.body.position)
 
@@ -363,11 +368,10 @@ class Ship(Thing):
     turn_torque = 500.
     damping_torque = 20.
     cannon_slots = [(-0.75, 1.), (0., 1.75), (0.75, 1.)]
-    group_index = -1
-    texture = 'ship.png'
     scale = 0.015
 
-    def __init__(self, **kwargs):
+    def __init__(self, texture='ship-1-ao.png', **kwargs):
+        self.texture = texture
         super(Ship, self).__init__(**kwargs)
         self.locking = False
         self.thrust = b2Vec2(0., 0.)
@@ -436,21 +440,23 @@ class ShipControls(object):
             cannon.firing = pyglet.window.key.SPACE in self.keys
 
 class Asteroid(Thing):
-    texture = 'asteroid.png'
-    group_index = -2
+    texture = 'asteroid-ao.png'
     density = 10.
 
-    def __init__(self, **kwargs):
+    def __init__(self, group_index=ASTEROID_GROUP, **kwargs):
         size = random.gauss(1., 0.1)
         self.scale = 0.025 * size
         self.radius = 3.25 * size
-        super(Asteroid, self).__init__(**kwargs)
+        super(Asteroid, self).__init__(group_index=group_index, **kwargs)
 
 class GameScreen(object):
     def __init__(self, window, debug):
         self.window = window
         self.level = Level(debug)
-        self.ship = Ship(level=self.level, z=1.)
+        self.ship = Ship(level=self.level, position=(-5., 0.), z=2.,
+                         group_index=PLAYER_1_GROUP)
+        ship_2 = Ship(texture='ship-2-ao.png', level=self.level,
+                      position=(5., 0.), z=1., group_index=PLAYER_2_GROUP)
         self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
