@@ -347,7 +347,7 @@ class MissileRamp(Cannon):
     pass
 
 class Shot(Thing):
-    fade_dt = 0.1
+    pass
 
 class PlasmaShot(Shot):
     texture = 'plasma-shot.png'
@@ -355,6 +355,7 @@ class PlasmaShot(Shot):
     group_index = -1
     radius = 0.1
     sensor = True
+    fade_dt = 0.1
 
     def collide(self, other):
         self.delete()
