@@ -245,7 +245,7 @@ class Thing(object):
         if not self.deleted:
             self.deleted = True
             self.level.things.remove(self)
-            self.level.sprites.remove(self.sprite)
+            self.fade_away()
             self.level.world.DestroyBody(self.body)
             self.body = None
 
@@ -259,6 +259,21 @@ class Thing(object):
     def fade_out(self):
         dt = self.fade_dt * self.sprite.alpha
         self.sprite.alpha = rabbyt.lerp(end=0., dt=self.fade_dt)
+
+    def fade_away(self):
+        dt = self.fade_dt * self.sprite.alpha
+        self.sprite.alpha = rabbyt.lerp(end=0., dt=self.fade_dt)
+        def remove_sprite(dt, sprite):
+            self.level.sprites.remove(sprite)
+        pyglet.clock.schedule_once(remove_sprite, dt, self.sprite)
+        self.sprite.x = rabbyt.lerp(end=(self.body.position.x +
+                                         self.body.linearVelocity.x), dt=1.)
+        self.sprite.y = rabbyt.lerp(end=(self.body.position.y +
+                                         self.body.linearVelocity.y), dt=1.)
+        self.sprite.rot = rabbyt.lerp(end=rad_to_deg(self.body.angle +
+                                                     self.body.angularVelocity),
+                                      dt=1.)
+        self.sprite = None
 
     def collide(self, other):
         pass
@@ -312,7 +327,7 @@ class PlasmaCannon(Cannon):
     recoil = 1.5
     cooldown_mean = 0.3
     cooldown_dev = 0.05
-    muzzle_velocity = 40.
+    muzzle_velocity = 30.
 
     def __init__(self, **kwargs):
         super(PlasmaCannon, self).__init__(**kwargs)
