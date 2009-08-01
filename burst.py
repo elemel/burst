@@ -100,6 +100,19 @@ def create_prismatic_joint(world, body_1, body_2, anchor=None, axis=None,
     joint_def.motorSpeed = motor_speed
     world.CreateJoint(joint_def)
 
+def connect_sprite_to_body(sprite, body):
+    sprite.x = lambda: body.position.x
+    sprite.y = lambda: body.position.y
+    sprite.rot = lambda: rad_to_deg(body.angle)
+
+def disconnect_sprite_from_body(sprite, body):
+    end_x = body.position.x + body.linearVelocity.x
+    end_y = body.position.y + body.linearVelocity.y
+    end_rot = rad_to_deg(body.angle + body.angularVelocity)
+    sprite.x = rabbyt.lerp(end=end_x, dt=1., extend='extrapolate')
+    sprite.y = rabbyt.lerp(end=end_y, dt=1., extend='extrapolate')
+    sprite.rot = rabbyt.lerp(end=end_rot, dt=1., extend='extrapolate')
+
 class Camera(object):
     def __init__(self):
         # Translation, in meters.
@@ -234,13 +247,9 @@ class Thing(object):
     def _init_sprite(self, z=0., red=1., green=1., blue=1.):
         self.sprite = MySprite(texture=self.texture, scale=self.scale,
                                red=red, green=green, blue=blue, alpha=0., z=z)
-        self.level.sprites.append(self.sprite)
-
-        self.sprite.x = lambda: self.body.position.x
-        self.sprite.y = lambda: self.body.position.y
-        self.sprite.rot = lambda: rad_to_deg(self.body.angle)
-
+        connect_sprite_to_body(self.sprite, self.body)
         self.fade_in()
+        self.level.sprites.append(self.sprite)
 
     def delete(self):
         if not self.deleted:
@@ -263,18 +272,10 @@ class Thing(object):
 
     def fade_away(self):
         self.fade_out()
-
+        disconnect_sprite_from_body(self.sprite, self.body)
         def remove_sprite(dt, sprite):
            self.level.sprites.remove(sprite)
         pyglet.clock.schedule_once(remove_sprite, self.fade_dt, self.sprite)
-
-        end_x = self.body.position.x + self.body.linearVelocity.x
-        end_y = self.body.position.y + self.body.linearVelocity.y
-        end_rot = rad_to_deg(self.body.angle + self.body.angularVelocity)
-        self.sprite.x = rabbyt.lerp(end=end_x, dt=1., extend='extrapolate')
-        self.sprite.y = rabbyt.lerp(end=end_y, dt=1., extend='extrapolate')
-        self.sprite.rot = rabbyt.lerp(end=end_rot, dt=1., extend='extrapolate')
-
         self.sprite = None
 
     def collide(self, other):
