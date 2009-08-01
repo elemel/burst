@@ -236,10 +236,6 @@ class Thing(object):
                                red=red, green=green, blue=blue, alpha=0., z=z)
         self.level.sprites.append(self.sprite)
 
-        self.sprite.red = red
-        self.sprite.green = green
-        self.sprite.blue = blue
-
         self.sprite.x = lambda: self.body.position.x
         self.sprite.y = lambda: self.body.position.y
         self.sprite.rot = lambda: rad_to_deg(self.body.angle)
@@ -467,21 +463,20 @@ class Asteroid(Thing):
     density = 10.
 
     def __init__(self, group_index=ASTEROID_GROUP, **kwargs):
-        size = random.gauss(1., 0.1)
-        self.scale = 0.025 * size
-        self.radius = 3.25 * size
-        self.power = 5
+        self.radius = random.gauss(3., 0.5)
+        self.scale = 0.0075 * self.radius
+        self.power = self.radius ** 2
         red = random.gauss(0.9, 0.1)
-        green = random.gauss(0.8, 0.2)
-        blue = random.gauss(0.7, 0.3)
+        green = random.gauss(0.9, 0.1)
+        blue = random.gauss(0.9, 0.1)
         super(Asteroid, self).__init__(group_index=group_index,
                                        red=red, green=green, blue=blue,
                                        **kwargs)
 
     def collide(self, other):
         if isinstance(other, Shot):
-            self.power -= 1
-            if self.power <= 0:
+            self.power -= 1.
+            if self.power <= 0.:
                 self.delete()
 
 class GameScreen(object):
