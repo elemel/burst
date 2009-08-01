@@ -481,13 +481,20 @@ class Asteroid(Thing):
                 self.delete()
 
 class GameScreen(object):
-    def __init__(self, window, debug):
+    def __init__(self, window, debug=False, single=True):
         self.window = window
         self.level = Level(debug)
-        self.ship = Ship(level=self.level, position=(-10., -10.), z=2.,
+        if single:
+            position_1 = position=(0., -10.)
+        else:
+            position_1 = position=(-10., -10.)
+            position_2 = position=(10., -10.)
+        self.ship = Ship(level=self.level, position=position_1, z=2.,
                          group_index=PLAYER_1_GROUP)
-        ship_2 = Ship(texture='ship-2-ao.png', level=self.level,
-                      position=(10., -10.), z=1., group_index=PLAYER_2_GROUP)
+        if not single:
+            ship_2 = Ship(texture='ship-2-ao.png', level=self.level,
+                          position=position_2, z=1.,
+                          group_index=PLAYER_2_GROUP)
         self.controls = ShipControls(self.level, self.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
@@ -511,7 +518,7 @@ class GameScreen(object):
         self.controls.on_key_release(symbol, modifiers)
             
 class MyWindow(pyglet.window.Window):
-    def __init__(self, fps=False, debug=False, **kwargs):
+    def __init__(self, fps=False, debug=False, single=True, **kwargs):
         super(MyWindow, self).__init__(**kwargs)
 
         # Grab mouse and keyboard if we're in fullscreen mode.
@@ -528,7 +535,7 @@ class MyWindow(pyglet.window.Window):
         self.fps_display = pyglet.clock.ClockDisplay() if fps else None
 
         # Most window calls are delegated to a screen.
-        self.my_screen = GameScreen(self, debug)
+        self.my_screen = GameScreen(self, debug=debug, single=single)
 
     def on_draw(self):
         # Delegate to screen.
@@ -564,13 +571,15 @@ def help():
 Usage: burst [OPTION]...
 
 Options:
-  --debug       Draw debug graphics.
-  --fps         Display FPS counter.
-  --fullscreen  Run in fullscreen mode (default).
+  -1            Enable single-player mode (default).
+  -2            Enable two-player mode.
+  --debug       Enable debug graphics.
+  --fps         Enable FPS counter.
+  --fullscreen  Enable fullscreen mode (default).
   -h, --help    Print this helpful text and exit.
   --test        Run tests and exit.
   -v            Enable verbose output (use with --test).
-  --windowed    Run in windowed mode.
+  --windowed    Enable windowed mode.
 
 Controls:
   Arrows        Fly.
@@ -594,13 +603,20 @@ def main():
         return test()
     debug = '--debug' in args
     fps = '--fps' in args
+    single = True
     fullscreen = True
     for arg in args:
+        if arg == '-1':
+            single = True
+        if arg == '-2':
+            single = False
         if arg == '--fullscreen':
             fullscreen = True
         if arg == '--windowed':
             fullscreen = False
-    window = MyWindow(debug=debug, fps=fps, fullscreen=fullscreen)
+    two = '-2' in args or '--two' in args
+    window = MyWindow(debug=debug, fps=fps, fullscreen=fullscreen,
+                      single=single)
     pyglet.app.run()
 
 if __name__ == '__main__':
