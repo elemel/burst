@@ -464,12 +464,12 @@ class Asteroid(Thing):
     density = 10.
 
     def __init__(self, group_index=ASTEROID_GROUP, **kwargs):
-        self.radius = random.gauss(3., 0.5)
+        self.radius = random.gauss(4.5, 0.2)
         self.scale = 0.0075 * self.radius
         self.power = self.radius ** 2
-        red = random.gauss(0.9, 0.1)
-        green = random.gauss(0.9, 0.1)
-        blue = random.gauss(0.9, 0.1)
+        red = random.gauss(0.95, 0.05)
+        green = random.gauss(0.95, 0.05)
+        blue = random.gauss(0.95, 0.05)
         super(Asteroid, self).__init__(group_index=group_index,
                                        red=red, green=green, blue=blue,
                                        **kwargs)
