@@ -208,13 +208,14 @@ class Thing(object):
     group_index = 0
 
     def __init__(self, level, position=(0., 0.), linear_velocity=(0., 0.),
-                 angle=0., angular_velocity=0., z=0., group_index=0):
+                 angle=0., angular_velocity=0., z=0., group_index=0,
+                 red=1., green=1., blue=1.):
         self.group_index = group_index
         self.deleted = False
         self.level = level
         self._init_body(position=position, linear_velocity=linear_velocity,
                         angle=angle, angular_velocity=angular_velocity)
-        self._init_sprite(z=z)
+        self._init_sprite(z=z, red=red, green=green, blue=blue)
         self.level.things.append(self)
 
     def _init_body(self, position=(0., 0.), linear_velocity=(0., 0.),
@@ -230,10 +231,14 @@ class Thing(object):
                                        sensor=self.sensor)
         self.body.userData = self
 
-    def _init_sprite(self, z=0.):
+    def _init_sprite(self, z=0., red=1., green=1., blue=1.):
         self.sprite = MySprite(texture=self.texture, scale=self.scale,
-                               alpha=0., z=z)
+                               red=red, green=green, blue=blue, alpha=0., z=z)
         self.level.sprites.append(self.sprite)
+
+        self.sprite.red = red
+        self.sprite.green = green
+        self.sprite.blue = blue
 
         self.sprite.x = lambda: self.body.position.x
         self.sprite.y = lambda: self.body.position.y
@@ -466,7 +471,12 @@ class Asteroid(Thing):
         self.scale = 0.025 * size
         self.radius = 3.25 * size
         self.power = 5
-        super(Asteroid, self).__init__(group_index=group_index, **kwargs)
+        red = random.gauss(0.9, 0.1)
+        green = random.gauss(0.8, 0.2)
+        blue = random.gauss(0.7, 0.3)
+        super(Asteroid, self).__init__(group_index=group_index,
+                                       red=red, green=green, blue=blue,
+                                       **kwargs)
 
     def collide(self, other):
         if isinstance(other, Shot):
