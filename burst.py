@@ -394,6 +394,7 @@ class Ship(Thing):
         self.texture = texture
         super(Ship, self).__init__(**kwargs)
         self.locking = False
+        self.target = None
         self.thrust = b2Vec2(0., 0.)
         self.cannons = [None, None, None]
         for i in xrange(3):
@@ -409,11 +410,43 @@ class Ship(Thing):
         self.linear_velocity = b2Vec2(0., 0.)
 
     # TODO: Set self.linear_velocity from e.g. scrolling.
-    #
-    # TODO: Set self.angle from e.g. locking or scrolling.
     def step(self):
+        self._update_target()
+        self._update_angle()
         self._apply_force()
         self._apply_torque()
+
+    def _update_target(self):
+        if self.locking:
+            if self.target is not None:
+                if self.target.body is None:
+                    self.target = None
+                else:
+                    distance = ((self.body.position -
+                                 self.target.body.position).Length() -
+                                self.target.radius)
+                    if distance >= 50.:
+                        self.target = None
+            if self.target is None:
+                segment = b2Segment()
+                segment.p1 = (self.body.position +
+                              self.body.GetWorldVector(b2Vec2(0., 5.)))
+                segment.p2 = (segment.p1 +
+                              self.body.GetWorldVector(b2Vec2(0., 20.)))
+                fraction, normal, shape = self.level.world.RaycastOne(segment,
+                                                                      True,
+                                                                      None)
+                if shape is not None:
+                    self.target = shape.GetBody().userData
+        else:
+            self.target = None
+
+    def _update_angle(self):
+        if self.target is None:
+            self.angle = 0.
+        else:
+            offset = self.target.body.position - self.body.position
+            self.angle = atan2(offset.y, offset.x) - pi / 2.
 
     def _apply_force(self):
         linear_velocity_error = self.linear_velocity - self.body.linearVelocity
@@ -422,7 +455,12 @@ class Ship(Thing):
         self.body.ApplyForce(force, self.body.position)
 
     def _apply_torque(self):
-        torque = (self.turn_torque * (self.angle - self.body.angle) -
+        angle_error = self.angle - self.body.angle
+        if angle_error < -pi:
+            angle_error += 2. * pi
+        elif angle_error >= pi:
+            angle_error -= 2. * pi
+        torque = (self.turn_torque * angle_error -
                   self.damping_torque * self.body.angularVelocity)
         self.body.ApplyTorque(torque)
 
@@ -433,6 +471,8 @@ class ShipControls(object):
         self.keys = set()
 
     def on_key_press(self, symbol, modifiers):
+        if symbol == pyglet.window.key.ENTER:
+           self.ship.locking = not self.ship.locking
         self.keys.add(symbol)
         self.update()
 
@@ -443,7 +483,6 @@ class ShipControls(object):
     def update(self):
         self._update_thrust()
         self._update_firing()
-        self.ship.locking = pyglet.window.key.ENTER in self.keys
 
     def _update_thrust(self):
         left = float(pyglet.window.key.LEFT in self.keys)
