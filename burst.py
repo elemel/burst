@@ -140,6 +140,15 @@ class Level(object):
         self._init_world()
         self._init_circle_vertex_list()
         self.camera = Camera()
+
+        self.challenge = None
+        self._create_challenge()
+        pyglet.clock.schedule_interval(self._create_challenge, 30.)
+
+    def _create_challenge(self, dt=None):
+        if self.challenge is not None:
+            self.challenge.delete()
+            self.challenge = None
         self.challenge = AsteroidField(level=self)
 
     def _init_world(self):
@@ -155,6 +164,7 @@ class Level(object):
 
     def step(self):
         self.time += self.dt
+        self.challenge.step()
         for thing in self.things:
             thing.step()
         self.world.Step(self.dt, 10, 10)
@@ -297,8 +307,17 @@ class AsteroidField(Challenge):
 
     def __init__(self, **kwargs):
         super(AsteroidField, self).__init__(**kwargs)
-        for _ in xrange(100):
-            self.create_asteroid()
+        self.asteroids = []
+
+    def delete(self):
+        for asteroid in self.asteroids:
+            asteroid.delete()
+        self.asteroids = []
+
+    def step(self):
+        self.asteroids = [a for a in self.asteroids if not a.deleted]
+        while len(self.asteroids) < 10:
+            self.asteroids.append(self.create_asteroid())
 
     def create_asteroid(self):
         position_angle = 2 * pi * random.random()
@@ -306,14 +325,16 @@ class AsteroidField(Challenge):
         position = (self.level.camera.position +
                     distance * b2Vec2(cos(position_angle),
                                       sin(position_angle)))
-        linear_velocity = 10. * b2Vec2(random.random() - 0.5,
-                                       random.random() - 0.5)
+        linear_velocity = (self.level.ship.body.position - position)
+        linear_velocity.Normalize()
+        linear_velocity *= random.gauss(5., 1.)
         orientation_angle = 2 * pi * random.random()
         angular_velocity = random.gauss(0., 0.5)
         asteroid = Asteroid(level=self.level, position=position,
                             linear_velocity=linear_velocity,
                             angle=orientation_angle,
                             angular_velocity=angular_velocity)
+        return asteroid
 
 class Cannon(Thing):
     radius = 0.1
@@ -384,7 +405,7 @@ class Missile(Shot):
 class Ship(Thing):
     thrust_force = 700.
     damping_force = 20.
-    turn_torque = 500.
+    turn_torque = 200.
     damping_torque = 20.
     cannon_slots = [(-0.75, 1.), (0., 1.75), (0.75, 1.)]
     scale = 0.015
@@ -456,9 +477,9 @@ class Ship(Thing):
 
     def _apply_torque(self):
         angle_error = self.angle - self.body.angle
-        if angle_error < -pi:
+        while angle_error < -pi:
             angle_error += 2. * pi
-        elif angle_error >= pi:
+        while angle_error >= pi:
             angle_error -= 2. * pi
         torque = (self.turn_torque * angle_error -
                   self.damping_torque * self.body.angularVelocity)
@@ -528,13 +549,13 @@ class GameScreen(object):
         else:
             position_1 = position=(-10., -10.)
             position_2 = position=(10., -10.)
-        self.ship = Ship(level=self.level, position=position_1, z=2.,
-                         group_index=PLAYER_1_GROUP)
+        self.level.ship = Ship(level=self.level, position=position_1, z=2.,
+                               group_index=PLAYER_1_GROUP)
         if not single:
             ship_2 = Ship(texture='ship-2-ao.png', level=self.level,
                           position=position_2, z=1.,
                           group_index=PLAYER_2_GROUP)
-        self.controls = ShipControls(self.level, self.ship)
+        self.controls = ShipControls(self.level, self.level.ship)
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
 
