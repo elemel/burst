@@ -141,6 +141,7 @@ class Level(object):
         self._init_circle_vertex_list()
         self.camera = Camera()
 
+        self.player_ships = []
         self.challenge = None
         self._create_challenge()
         pyglet.clock.schedule_interval(self._create_challenge, 30.)
@@ -316,16 +317,20 @@ class AsteroidField(Challenge):
 
     def step(self):
         self.asteroids = [a for a in self.asteroids if not a.deleted]
-        while len(self.asteroids) < 10:
-            self.asteroids.append(self.create_asteroid())
+        targets = [s for s in self.level.player_ships if not s.deleted]
+        if targets:
+            while len(self.asteroids) < 10:
+                target = random.choice(targets)
+                asteroid = self.create_asteroid(target)
+                self.asteroids.append(asteroid)
 
-    def create_asteroid(self):
+    def create_asteroid(self, target):
         position_angle = 2 * pi * random.random()
         distance = random.gauss(50., 1.)
         position = (self.level.camera.position +
                     distance * b2Vec2(cos(position_angle),
                                       sin(position_angle)))
-        linear_velocity = (self.level.ship.body.position - position)
+        linear_velocity = target.body.position - position
         linear_velocity.Normalize()
         linear_velocity *= random.gauss(5., 1.)
         orientation_angle = 2 * pi * random.random()
@@ -549,13 +554,15 @@ class GameScreen(object):
         else:
             position_1 = position=(-10., -10.)
             position_2 = position=(10., -10.)
-        self.level.ship = Ship(level=self.level, position=position_1, z=2.,
-                               group_index=PLAYER_1_GROUP)
+        ship_1 = Ship(level=self.level, position=position_1, z=2.,
+                      group_index=PLAYER_1_GROUP)
+        self.level.player_ships.append(ship_1)
         if not single:
             ship_2 = Ship(texture='ship-2-ao.png', level=self.level,
                           position=position_2, z=1.,
                           group_index=PLAYER_2_GROUP)
-        self.controls = ShipControls(self.level, self.level.ship)
+            self.level.player_ships.append(ship_2)
+        self.controls = ShipControls(self.level, self.level.player_ships[0])
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
 
