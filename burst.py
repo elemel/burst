@@ -137,6 +137,9 @@ class Level(object):
         # The sprites to draw every frame.
         self.sprites = []
 
+        self.stars_texture = pyglet.image.load('stars.png')
+        self.stars_texture = pyglet.image.TileableTexture.create_for_image(self.stars_texture)
+
         self._init_world()
         self._init_circle_vertex_list()
         self.camera = Camera()
@@ -182,6 +185,7 @@ class Level(object):
             thing.delete()
 
     def draw(self, width, height):
+        self.stars_texture.blit_tiled(0, 0, 0, width, height)
         glPushMatrix()
         glTranslatef(float(width // 2), float(height // 2), 0.)
         scale = float(min(width, height)) / self.camera.scale

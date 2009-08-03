@@ -1,3 +1,9 @@
+Copyright 2009 Mikael Lind
+
+stars.png:
+Copyright 2008 Patrick Hoesly
+http://zooboingreview.blogspot.com/
+
 Game Design
 
 - The ship can switch between different batteries. Cannon batteries can hold
