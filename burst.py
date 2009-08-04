@@ -185,6 +185,7 @@ class Level(object):
             thing.delete()
 
     def draw(self, width, height):
+        glColor3f(1., 1., 1.)
         self.stars_texture.blit_tiled(0, 0, 0, width, height)
         glPushMatrix()
         glTranslatef(float(width // 2), float(height // 2), 0.)
@@ -528,6 +529,20 @@ class ShipControls(object):
         for cannon in self.ship.cannons:
             cannon.firing = pyglet.window.key.SPACE in self.keys
 
+class CameraControls(object):
+    def __init__(self, level, camera):
+        self.level = level
+        self.camera = camera
+
+    def on_key_press(self, symbol, modifiers):
+        if symbol == pyglet.window.key.PLUS:
+           self.camera.scale /= 1.5
+        if symbol == pyglet.window.key.MINUS:
+           self.camera.scale *= 1.5
+
+    def on_key_release(self, symbol, modifiers):
+        pass
+
 class Asteroid(Thing):
     texture = 'asteroid-ao.png'
     density = 10.
@@ -566,7 +581,11 @@ class GameScreen(object):
                           position=position_2, z=1.,
                           group_index=PLAYER_2_GROUP)
             self.level.player_ships.append(ship_2)
-        self.controls = ShipControls(self.level, self.level.player_ships[0])
+        self.controls = []
+        self.controls.append(ShipControls(self.level,
+                                          self.level.player_ships[0]))
+        self.controls.append(CameraControls(self.level,
+                                            self.level.camera))
         self.time = 0.
         pyglet.clock.schedule_interval(self.step, self.level.dt)
 
@@ -583,10 +602,12 @@ class GameScreen(object):
         pyglet.clock.unschedule(self.step)
 
     def on_key_press(self, symbol, modifiers):
-        self.controls.on_key_press(symbol, modifiers)
+        for controls in self.controls:
+            controls.on_key_press(symbol, modifiers)
 
     def on_key_release(self, symbol, modifiers):
-        self.controls.on_key_release(symbol, modifiers)
+        for controls in self.controls:
+            controls.on_key_release(symbol, modifiers)
             
 class MyWindow(pyglet.window.Window):
     def __init__(self, fps=False, debug=False, single=True, **kwargs):
